@@ -8,13 +8,13 @@
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
     <style>
         :root {
-            --bg-primary: #1a1a1a;
-            --bg-secondary: #242424;
-            --bg-tertiary: #2a2a2a;
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #141414;
+            --bg-tertiary: #1a1a1a;
             --text-primary: #ffffff;
             --text-secondary: #a0a0a0;
             --accent-primary: #0066ff;
-            --accent-secondary: #404040;
+            --accent-secondary: #2a2a2a;
             --danger: #ff3b30;
             --border-radius: 12px;
             --spacing-xs: 4px;
@@ -106,27 +106,59 @@
         }
 
         .search-results {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
+            position: static;
             background: var(--bg-tertiary);
             border-radius: var(--border-radius);
             margin-top: var(--spacing-xs);
-            max-height: 300px;
-            overflow-y: auto;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-            z-index: 1000;
+            max-height: none;
+            overflow-y: visible;
+            display: none;
+        }
+
+        .search-results.active {
+            display: block;
         }
 
         .search-result-item {
             padding: var(--spacing-sm) var(--spacing-md);
             cursor: pointer;
             transition: var(--transition);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            border-bottom: 1px solid var(--accent-secondary);
+        }
+
+        .search-result-item:last-child {
+            border-bottom: none;
         }
 
         .search-result-item:hover {
             background: var(--accent-secondary);
+        }
+
+        .search-result-title {
+            font-weight: 500;
+        }
+
+        .search-result-preview {
+            font-size: 12px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .search-result-date {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .no-results {
+            padding: var(--spacing-md);
+            color: var(--text-secondary);
+            text-align: center;
+            font-style: italic;
         }
 
         button {
@@ -223,7 +255,7 @@
             padding: var(--spacing-lg);
             font-size: 16px;
             line-height: 1.6;
-            color: var(--text-primary);
+            color: #00ff00;
         }
 
         .ql-editor.ql-blank::before {
@@ -348,6 +380,93 @@
             color: var(--text-secondary);
             font-size: 12px;
         }
+
+        .document-selector {
+            margin-bottom: var(--spacing-md);
+        }
+
+        select {
+            width: 100%;
+            background: var(--bg-tertiary);
+            border: none;
+            color: var(--text-primary);
+            padding: var(--spacing-sm) var(--spacing-md);
+            border-radius: var(--border-radius);
+            font-size: 14px;
+            transition: var(--transition);
+        }
+
+        select:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px var(--accent-primary);
+        }
+
+        .documents-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-xs);
+            margin: var(--spacing-md) 0;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .document-item {
+            display: flex;
+            align-items: center;
+            padding: var(--spacing-sm) var(--spacing-md);
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            transition: var(--transition);
+            gap: var(--spacing-sm);
+        }
+
+        .document-item:hover {
+            background: var(--accent-secondary);
+        }
+
+        .document-item.active {
+            background: var(--accent-primary);
+        }
+
+        .document-item .doc-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .document-item .doc-date {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .document-item .delete-btn {
+            opacity: 0;
+            padding: 2px 6px;
+            font-size: 12px;
+            background: transparent;
+            color: var(--danger);
+            transition: opacity 0.2s ease;
+        }
+
+        .document-item:hover .delete-btn {
+            opacity: 1;
+        }
+
+        .document-item .delete-btn:hover {
+            background: rgba(255, 59, 48, 0.1);
+        }
+
+        .new-doc-button {
+            width: 100%;
+            margin-top: auto;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
     </style>
 </head>
 <body>
@@ -358,11 +477,9 @@
                 <div id="searchResults" class="search-results"></div>
             </div>
             
-            <div class="folder-section">
-                <h3>Folders</h3>
-                <button onclick="createNewFolder()">+ New Folder</button>
-                <div id="folderList" class="folder-list"></div>
-            </div>
+            <div class="documents-list" id="documentsList"></div>
+            
+            <button onclick="createNewDocument()" class="new-doc-button">+ New Document</button>
         </aside>
 
         <main class="main-content">
@@ -387,7 +504,7 @@
     </div>
 
     <script>
-        let currentDoc = { id: '', title: '', content: '', folderId: '' };
+        let currentDoc = { id: '', title: '', content: '' };
         let autoSaveTimer = null;
         const AUTO_SAVE_DELAY = 3000;
         let quill; // Declare Quill instance
@@ -406,8 +523,7 @@
 
         window.onload = function() {
             initializeQuill();
-            loadFolders();
-            loadDocumentList();
+            updateSidebar();
             setupAutoSave();
         };
 
@@ -462,130 +578,36 @@
             quill.focus();
         }
 
-        function createNewFolder() {
-            const folderName = prompt('Enter folder name:');
-            if (!folderName) return;
-
-            const folders = getFolders();
-            const newFolder = {
-                id: Date.now().toString(),
-                name: folderName
-            };
-
-            folders.push(newFolder);
-            localStorage.setItem('folders', JSON.stringify(folders));
-            loadFolders();
+        function updateSidebar() {
+            const sidebar = document.querySelector('.sidebar');
+            sidebar.innerHTML = `
+                <div class="search-container">
+                    <input type="text" id="searchInput" placeholder="Search documents..." oninput="searchDocuments()">
+                    <div id="searchResults" class="search-results"></div>
+                </div>
+                
+                <div class="documents-list" id="documentsList"></div>
+                
+                <button onclick="createNewDocument()" class="new-doc-button">+ New Document</button>
+            `;
+            
+            loadDocumentsList();
         }
 
-        function getFolders() {
-            const folders = localStorage.getItem('folders');
-            return folders ? JSON.parse(folders) : [];
-        }
-
-        function loadFolders() {
-            const folders = getFolders();
-            const folderList = document.getElementById('folderList');
-            folderList.innerHTML = '';
-
-            folders.forEach(folder => {
-                const folderDiv = document.createElement('div');
-                folderDiv.className = 'folder-item';
-                folderDiv.innerHTML = `
-                    <span onclick="loadFolderDocuments('${folder.id}')">${folder.name}</span>
-                    <button onclick="deleteFolder('${folder.id}')" class="delete">×</button>
-                `;
-                folderList.appendChild(folderDiv);
-            });
-        }
-
-        function loadFolderDocuments(folderId) {
-            const documents = getDocuments().filter(doc => doc.folderId === folderId);
-            updateDocumentList(documents);
-        }
-
-        function deleteFolder(folderId) {
-            if (!confirm('Delete this folder and all its documents?')) return;
-
-            const folders = getFolders().filter(f => f.id !== folderId);
-            const documents = getDocuments().filter(d => d.folderId !== folderId);
-
-            localStorage.setItem('folders', JSON.stringify(folders));
-            localStorage.setItem('documents', JSON.stringify(documents));
-
-            loadFolders();
-            loadDocumentList();
-        }
-
-        function searchDocuments() {
-            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        function loadDocumentsList() {
             const documents = getDocuments();
-            const results = documents.filter(doc => 
-                doc.title.toLowerCase().includes(searchTerm) || 
-                doc.content.toLowerCase().includes(searchTerm)
-            );
-
-            const resultsDiv = document.getElementById('searchResults');
-            resultsDiv.innerHTML = '';
-
-            results.forEach(doc => {
-                const resultItem = document.createElement('div');
-                resultItem.className = 'search-result-item';
-                resultItem.textContent = doc.title;
-                resultItem.onclick = () => loadDocument(doc.id);
-                resultsDiv.appendChild(resultItem);
-            });
-        }
-
-        function setupAutoSave() {
-            quill.on('text-change', () => {
-                clearTimeout(autoSaveTimer);
-                autoSaveTimer = setTimeout(() => {
-                    if (currentDoc.id) {
-                        saveDocument(true);
-                        updateLastSaved();
-                    }
-                }, AUTO_SAVE_DELAY);
-            });
-        }
-
-        function updateLastSaved() {
-            const lastSaved = document.getElementById('lastSaved');
-            lastSaved.textContent = `Last saved: ${new Date().toLocaleTimeString()}`;
-        }
-
-        function downloadFile() {
-            const content = quill.root.innerHTML;
-            const title = document.getElementById('documentTitle').value.trim() || 'untitled';
+            const documentsList = document.getElementById('documentsList');
             
-            // Create a blob with HTML content
-            const blob = new Blob([content], { type: 'text/html' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${title}.html`;
+            // Sort documents by last modified date
+            documents.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
             
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            
-            URL.revokeObjectURL(a.href);
-        }
-
-        function loadDocumentList() {
-            const documents = getDocuments();
-            const select = document.getElementById('documentList');
-            select.innerHTML = '<option value="">Select a document</option>';
-            
-            documents.forEach(doc => {
-                const option = document.createElement('option');
-                option.value = doc.id;
-                option.textContent = doc.title;
-                select.appendChild(option);
-            });
-        }
-
-        function getDocuments() {
-            const docs = localStorage.getItem('documents');
-            return docs ? JSON.parse(docs) : [];
+            documentsList.innerHTML = documents.map(doc => `
+                <div class="document-item${currentDoc.id === doc.id ? ' active' : ''}" onclick="loadDocument('${doc.id}')">
+                    <span class="doc-title">${doc.title || 'Untitled'}</span>
+                    <span class="doc-date">${new Date(doc.lastModified).toLocaleDateString()}</span>
+                    <button onclick="event.stopPropagation(); deleteDocument('${doc.id}')" class="delete-btn" title="Delete">×</button>
+                </div>
+            `).join('');
         }
 
         function saveDocument(isAutoSave = false) {
@@ -604,7 +626,6 @@
                 id: currentDoc.id || Date.now().toString(),
                 title: title || 'Untitled',
                 content: content,
-                folderId: currentDoc.folderId,
                 lastModified: new Date().toISOString()
             };
 
@@ -622,8 +643,7 @@
             localStorage.setItem('documents', JSON.stringify(documents));
             currentDoc = newDoc;
             
-            loadDocumentList();
-            document.getElementById('documentList').value = newDoc.id;
+            loadDocumentsList();
             document.getElementById('deleteButton').disabled = false;
 
             if (!isAutoSave) {
@@ -645,26 +665,159 @@
                 document.getElementById('documentTitle').value = doc.title;
                 quill.root.innerHTML = doc.content;
                 document.getElementById('deleteButton').disabled = false;
+                loadDocumentsList(); // Refresh list to show active state
             }
         }
 
         function createNewDocument() {
-            currentDoc = { id: '', title: '', content: '', folderId: '' };
+            currentDoc = { id: '', title: '', content: '' };
             document.getElementById('documentTitle').value = '';
             quill.root.innerHTML = '';
-            document.getElementById('documentList').value = '';
             document.getElementById('deleteButton').disabled = true;
+            loadDocumentsList();
         }
 
-        function deleteDocument() {
-            if (!currentDoc.id) return;
-
-            if (confirm('Are you sure you want to delete this document?')) {
-                const documents = getDocuments().filter(doc => doc.id !== currentDoc.id);
-                localStorage.setItem('documents', JSON.stringify(documents));
-                createNewDocument();
-                loadDocumentList();
+        function deleteDocument(docId = null) {
+            // If no docId provided, use the current document's id
+            const idToDelete = docId || currentDoc.id;
+            if (!idToDelete) return;
+            
+            const documents = getDocuments();
+            const doc = documents.find(d => d.id === idToDelete);
+            if (!doc) return;
+            
+            if (!confirm(`Are you sure you want to delete "${doc.title || 'Untitled'}"?`)) {
+                return;
             }
+
+            // Remove the document from storage
+            localStorage.setItem('documents', JSON.stringify(documents.filter(d => d.id !== idToDelete)));
+            
+            // If we're deleting the current document, create a new one
+            if (currentDoc.id === idToDelete) {
+                createNewDocument();
+            } else {
+                loadDocumentsList();
+            }
+        }
+
+        function searchDocuments() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
+            const resultsDiv = document.getElementById('searchResults');
+            const documentsList = document.getElementById('documentsList');
+            
+            if (!searchTerm) {
+                resultsDiv.classList.remove('active');
+                documentsList.style.display = 'flex';
+                return;
+            }
+
+            const documents = getDocuments();
+            const results = documents.filter(doc => {
+                const plainTextContent = stripHtml(doc.content); // We'll define this helper function
+                return doc.title.toLowerCase().includes(searchTerm) || 
+                       plainTextContent.toLowerCase().includes(searchTerm);
+            });
+
+            resultsDiv.classList.add('active');
+            documentsList.style.display = 'none';
+
+            if (results.length === 0) {
+                resultsDiv.innerHTML = '<div class="no-results">No matching documents found</div>';
+                return;
+            }
+
+            resultsDiv.innerHTML = results.map(doc => {
+                const plainTextContent = stripHtml(doc.content);
+                const contentPreview = getContentPreview(plainTextContent, searchTerm);
+                const lastModified = new Date(doc.lastModified).toLocaleDateString();
+                
+                return `
+                    <div class="search-result-item" onclick="selectSearchResult('${doc.id}')">
+                        <div class="search-result-title">${highlightMatch(doc.title, searchTerm)}</div>
+                        <div class="search-result-preview">${contentPreview}</div>
+                        <div class="search-result-date">Modified: ${lastModified}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function stripHtml(html) {
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+            return temp.textContent || temp.innerText || '';
+        }
+
+        function getContentPreview(content, searchTerm) {
+            const maxLength = 100;
+            const searchIndex = content.toLowerCase().indexOf(searchTerm.toLowerCase());
+            
+            if (searchIndex === -1) {
+                return content.slice(0, maxLength) + '...';
+            }
+
+            const start = Math.max(0, searchIndex - 40);
+            const end = Math.min(content.length, searchIndex + 60);
+            const preview = content.slice(start, end);
+            
+            return (start > 0 ? '...' : '') + 
+                   highlightMatch(preview, searchTerm) + 
+                   (end < content.length ? '...' : '');
+        }
+
+        function highlightMatch(text, searchTerm) {
+            const regex = new RegExp(`(${escapeRegExp(searchTerm)})`, 'gi');
+            return text.replace(regex, '<mark>$1</mark>');
+        }
+
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function selectSearchResult(docId) {
+            loadDocument(docId);
+            document.getElementById('searchInput').value = '';
+            document.getElementById('searchResults').classList.remove('active');
+            document.getElementById('documentsList').style.display = 'flex';
+        }
+
+        function setupAutoSave() {
+            quill.on('text-change', () => {
+                clearTimeout(autoSaveTimer);
+                autoSaveTimer = setTimeout(() => {
+                    if (currentDoc.id) {
+                        saveDocument(true);
+                        updateLastSaved();
+                    }
+                }, AUTO_SAVE_DELAY);
+            });
+        }
+
+        function updateLastSaved() {
+            const lastSaved = document.getElementById('lastSaved');
+            lastSaved.textContent = `Last saved: ${new Date().toLocaleTimeString()}`;
+        }
+
+        function downloadFile() {
+            const content = quill.root.innerText;
+            const title = document.getElementById('documentTitle').value.trim() || 'untitled';
+            
+            // Create a blob with plain text content
+            const blob = new Blob([content], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${title}.txt`;
+            
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            URL.revokeObjectURL(a.href);
+        }
+
+        function getDocuments() {
+            const docs = localStorage.getItem('documents');
+            return docs ? JSON.parse(docs) : [];
         }
 
         function showSlashMenu(position) {
