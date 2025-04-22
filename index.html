@@ -811,6 +811,30 @@
                 flex-direction: column;
                 height: calc(100vh - 150px);
             }
+            
+            /* Adjust for keyboard visibility */
+            .ql-editor {
+                padding-bottom: 40vh !important; /* Add significant padding at the bottom */
+                min-height: 50vh;
+            }
+            
+            /* When in landscape mode, we need even more adjustments */
+            @media (orientation: landscape) {
+                .ql-editor {
+                    padding-bottom: 80vh !important; /* Even more padding in landscape */
+                }
+                
+                /* Minimize the toolbar in landscape when keyboard is visible */
+                body.keyboard-visible .ql-toolbar.ql-snow {
+                    padding: 4px !important;
+                    min-height: 36px;
+                }
+                
+                /* Give more space to the editor when keyboard is visible */
+                body.keyboard-visible .main-content {
+                    padding-top: 40px;
+                }
+            }
         }
 
         /* Small mobile devices */
@@ -860,6 +884,122 @@
             
             .main-content {
                 padding-top: 70px; /* Extra padding for very small screens */
+            }
+        }
+
+        /* Add styles for keyboard visibility */
+        .ql-editor {
+            padding-bottom: 40vh !important; /* Add significant padding at the bottom for mobile */
+        }
+
+        @media (max-width: 768px) {
+            /* Existing mobile styles */
+            
+            /* When keyboard is visible, make toolbar smaller */
+            body.keyboard-visible .ql-toolbar.ql-snow {
+                min-height: 40px;
+                padding: 4px 8px !important;
+            }
+            
+            /* Add extra padding at bottom in landscape */
+            @media (orientation: landscape) {
+                .ql-editor {
+                    padding-bottom: 60vh !important;
+                }
+                
+                /* Make interface elements smaller when keyboard visible */
+                body.keyboard-visible .toolbar {
+                    padding: var(--spacing-xs);
+                }
+                
+                body.keyboard-visible .main-content {
+                    padding-top: 40px;
+                }
+                
+                body.keyboard-visible .editor-container {
+                    height: calc(100vh - 100px);
+                }
+            }
+        }
+
+        /* Add styles for keyboard visibility */
+        .ql-editor {
+            padding-bottom: 40vh !important; /* Add significant padding at the bottom for mobile */
+        }
+
+        @media (max-width: 768px) {
+            /* Existing mobile styles */
+            
+            /* When keyboard is visible, adjust layout */
+            body.keyboard-visible .ql-toolbar.ql-snow {
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                z-index: 10;
+                min-height: 40px;
+                padding: 4px 8px !important;
+                background: var(--bg-tertiary);
+                opacity: 0.95;
+            }
+            
+            body.keyboard-visible .toolbar {
+                opacity: 0.6;
+                transition: opacity 0.3s ease;
+            }
+            
+            body.keyboard-visible .toolbar:hover {
+                opacity: 1;
+            }
+            
+            body.keyboard-visible .main-content {
+                padding-top: 50px;
+            }
+            
+            body.keyboard-visible .ql-editor {
+                padding-top: 5px;
+                padding-bottom: 60vh !important; /* Even more space at the bottom when keyboard is visible */
+            }
+            
+            body.keyboard-visible .status-bar {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                z-index: 10;
+                background: var(--bg-tertiary);
+                opacity: 0.9;
+            }
+            
+            /* Add extra padding at bottom in landscape */
+            @media (orientation: landscape) {
+                .ql-editor {
+                    padding-bottom: 60vh !important;
+                }
+                
+                body.keyboard-visible .ql-editor {
+                    padding-bottom: 80vh !important; /* Maximum space in landscape with keyboard */
+                }
+                
+                /* Make interface elements smaller when keyboard visible */
+                body.keyboard-visible .toolbar {
+                    padding: var(--spacing-xs);
+                    max-height: 40px;
+                    overflow: hidden;
+                }
+                
+                body.keyboard-visible .main-content {
+                    padding-top: 30px;
+                }
+                
+                body.keyboard-visible .editor-container {
+                    height: calc(100vh - 80px);
+                }
+                
+                /* Hide all non-essential elements in landscape with keyboard */
+                body.keyboard-visible .sidebar-toggle {
+                    opacity: 0.3;
+                }
             }
         }
     </style>
@@ -948,6 +1088,11 @@
             
             // Add this call to ensure toolbar visibility
             setTimeout(ensureMobileToolbarVisibility, 100);
+            
+            // Add keyboard handling for mobile
+            if ('ontouchstart' in window) {
+                setupKeyboardHandling();
+            }
             
             // Check for the last opened document
             const lastId = getLastOpenedDocumentId();
@@ -2033,36 +2178,96 @@
             }
         }
         
-        // Update window.onload to call both setup functions
-        window.onload = function() {
-            initializeQuill();
-            updateSidebar();
-            setupAutoSave();
-            setupThemeSwitcher();
-            applySavedTheme();
-            setupMobileUI();
+        // Add this new function to handle keyboard visibility
+        function setupKeyboardHandling() {
+            let originalWindowHeight = window.innerHeight;
+            const MIN_KEYBOARD_HEIGHT = 100; // Reduced minimum height to detect keyboard
             
-            // Add this call to ensure toolbar visibility
-            setTimeout(ensureMobileToolbarVisibility, 100);
-            
-            // Check for the last opened document
-            const lastId = getLastOpenedDocumentId();
-            const docs = getDocuments();
-            
-            if (lastId && docs.find(d => d.id === lastId)) {
-                // If we have a valid last opened document id, load it
-                loadDocument(lastId);
-            } else if (docs.length > 0) {
-                // Otherwise load the most recently modified document
-                docs.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
-                loadDocument(docs[0].id);
-            } else {
-                // Only create a new document if there are no documents at all
-                createNewDocument();
-                // Don't automatically save the empty document
-                currentDoc.autoSaveEnabled = false;
+            // Function to detect keyboard and adjust the view
+            function detectKeyboard() {
+                const currentWindowHeight = window.innerHeight;
+                const heightDifference = originalWindowHeight - currentWindowHeight;
+                
+                if (heightDifference > MIN_KEYBOARD_HEIGHT) {
+                    // Keyboard is likely visible
+                    document.body.classList.add('keyboard-visible');
+                    
+                    // Get current cursor position in editor
+                    const selection = quill.getSelection();
+                    if (selection) {
+                        // Calculate position of cursor in the editor
+                        const cursorPosition = quill.getBounds(selection.index);
+                        
+                        // Scroll the editor to make cursor visible with a larger offset for better visibility
+                        setTimeout(() => {
+                            const editorContainer = document.querySelector('.editor-container');
+                            if (editorContainer) {
+                                // Ensure cursor is in upper half of visible area (more space to see what you type)
+                                const scrollPosition = cursorPosition.top - 150;
+                                editorContainer.scrollTop = Math.max(0, scrollPosition);
+                            }
+                        }, 300); // Longer delay to ensure keyboard is fully visible
+                    }
+                } else {
+                    // Keyboard is likely hidden
+                    document.body.classList.remove('keyboard-visible');
+                    originalWindowHeight = Math.max(originalWindowHeight, currentWindowHeight); // Update if window grew
+                }
             }
-        };
+            
+            // Set up event listeners for keyboard detection
+            window.addEventListener('resize', detectKeyboard);
+            
+            // Listen for focus events on the editor
+            quill.root.addEventListener('focus', function() {
+                if (window.innerWidth <= 768) {
+                    // Will trigger keyboard on mobile
+                    setTimeout(detectKeyboard, 400);
+                }
+            });
+            
+            // Focus handling for editor to manage keyboard
+            quill.on('selection-change', function(range) {
+                if (range && window.innerWidth <= 768) {
+                    // User placed cursor, might trigger keyboard
+                    detectKeyboard();
+                    
+                    // Set a timeout to check again after keyboard is fully shown
+                    setTimeout(detectKeyboard, 400);
+                }
+            });
+            
+            // Handle text changes which might change cursor position
+            quill.on('text-change', function() {
+                if (document.body.classList.contains('keyboard-visible') && window.innerWidth <= 768) {
+                    // Get current cursor position
+                    const selection = quill.getSelection();
+                    if (selection) {
+                        // Scroll to keep cursor visible
+                        const cursorPosition = quill.getBounds(selection.index);
+                        const editorContainer = document.querySelector('.editor-container');
+                        
+                        if (editorContainer) {
+                            // Calculate if the cursor is in the visible area
+                            const containerHeight = editorContainer.clientHeight;
+                            const cursorBottom = cursorPosition.top + cursorPosition.height;
+                            const scrollTop = editorContainer.scrollTop;
+                            const visibleBottom = scrollTop + containerHeight;
+                            
+                            // If cursor would be below visible area, scroll to show it
+                            // We want the cursor to be comfortably above the bottom of the viewable area
+                            const safetyMargin = 100; // Larger margin for typing comfort
+                            if (cursorBottom > visibleBottom - safetyMargin) {
+                                editorContainer.scrollTop = cursorPosition.top - 150;
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Initial check
+            setTimeout(detectKeyboard, 500);
+        }
         
         // Add mobile event handler setup after the loadDocumentsList function
         function updateMobileEventHandlers() {
