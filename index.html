@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Thoughts</title>
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
     <style>
         :root {
@@ -59,6 +61,7 @@
             flex-direction: column;
             gap: var(--spacing-md);
             height: 100%;
+            overflow: hidden;
         }
 
         .main-content {
@@ -66,6 +69,9 @@
             flex-direction: column;
             gap: var(--spacing-md);
             height: 100%;
+            overflow-y: auto;
+            flex-grow: 1;
+            padding-bottom: var(--spacing-md);
         }
 
         .toolbar {
@@ -208,27 +214,71 @@
             display: flex;
             flex-direction: column;
             gap: var(--spacing-xs);
+            width: 100%;
         }
 
         .folder-item {
             display: flex;
+            flex-direction: column;
+            width: 100%;
+            margin-bottom: var(--spacing-xs);
+        }
+
+        .folder-header {
+            display: flex;
             align-items: center;
+            gap: var(--spacing-sm);
             padding: var(--spacing-sm) var(--spacing-md);
             border-radius: var(--border-radius);
             cursor: pointer;
             transition: var(--transition);
+            width: 100%;
         }
 
-        .folder-item:hover {
+        .folder-header:hover {
             background: var(--accent-secondary);
         }
 
-        .folder-item.active {
+        .folder-item.active > .folder-header {
             background: var(--accent-primary);
+            color: var(--text-primary);
         }
 
-        .folder-item span {
+        .folder-toggle-icon {
+            margin-right: var(--spacing-sm);
+            transition: transform 0.2s ease;
+            width: 10px;
+            height: 10px;
+            fill: currentColor;
+            transform: rotate(0deg);
+        }
+
+        .folder-item.open > .folder-header .folder-toggle-icon {
+            transform: rotate(90deg);
+        }
+
+        .folder-name {
             flex: 1;
+        }
+
+        .folder-controls {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-xs);
+        }
+
+        .folder-content {
+            display: none;
+            flex-direction: column;
+            padding-left: 24px;
+            width: 100%;
+            box-sizing: border-box;
+            border-left: 1px solid var(--accent-secondary);
+            margin-left: 5px;
+        }
+
+        .folder-item.open > .folder-content {
+            display: flex;
         }
 
         .editor-container {
@@ -460,12 +510,155 @@
         .new-doc-button {
             width: 100%;
             margin-top: auto;
+            flex-shrink: 0;
+        }
+
+        .new-folder-button {
+            width: 100%;
+            flex-shrink: 0;
+            margin-top: 0;
         }
 
         .sidebar {
             display: flex;
             flex-direction: column;
             height: 100%;
+        }
+
+        /* Theme Variations */
+        body.theme-charcoal {
+            --bg-primary: #1c1c1e;
+            --bg-secondary: #2c2c2e;
+            --bg-tertiary: #3a3a3c;
+            --text-primary: #f2f2f7;
+            --text-secondary: #8e8e93;
+            --accent-primary: #0a84ff;
+            --accent-secondary: #48484a;
+        }
+        body.theme-midnight-green {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent-primary: #238636;
+            --accent-secondary: #30363d;
+        }
+
+        .status-bar-left {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-md);
+        }
+
+        .status-bar-right {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+        }
+
+        .theme-switcher button {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 1px solid var(--text-secondary);
+            cursor: pointer;
+            padding: 0;
+            background-color: transparent;
+            opacity: 0.6;
+            transition: opacity 0.2s ease;
+        }
+
+        .theme-switcher button:hover,
+        .theme-switcher button.active {
+            opacity: 1;
+        }
+
+        .theme-switcher button[data-theme="theme-default"] { background-color: #0066ff; }
+        .theme-switcher button[data-theme="theme-charcoal"] { background-color: #0a84ff; }
+        .theme-switcher button[data-theme="theme-midnight-green"] { background-color: #238636; }
+
+        button svg {
+            width: 16px;
+            height: 16px;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+            vertical-align: middle;
+            pointer-events: none;
+        }
+
+        /* Styling for drag-over state */
+        .folder-header.drag-over,
+        .documents-root-dropzone.drag-over {
+            background-color: var(--accent-secondary);
+            outline: 2px dashed var(--accent-primary);
+            outline-offset: -2px;
+        }
+
+        .folder-item { 
+            /* Should act as a block within the flex column */
+            width: 100%; /* Ensure it takes full width in the column */
+        }
+
+        .folder-header {
+            /* Keep flex for internal alignment */
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-sm) var(--spacing-md);
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            transition: var(--transition);
+            position: relative; 
+            /* Remove fixed width if previously added */
+            width: auto; 
+        }
+        .folder-header:hover {
+             background: var(--accent-secondary);
+        }
+        .folder-item.active > .folder-header {
+             background: var(--accent-primary);
+             color: var(--text-primary);
+        }
+
+        .folder-toggle-icon {
+             margin-right: var(--spacing-sm);
+             transition: transform 0.2s ease;
+             width: 10px; /* Adjust size */
+             height: 10px;
+             fill: currentColor;
+             transform: rotate(0deg); /* Default state (closed) */
+        }
+        .folder-item.open > .folder-header .folder-toggle-icon {
+             transform: rotate(90deg); /* Rotated state (open) */
+        }
+
+        .folder-name {
+            flex: 1;
+        }
+
+        .folder-controls {
+             display: flex;
+             align-items: center;
+             gap: var(--spacing-xs);
+        }
+        
+        .folder-content {
+            padding-left: 30px; 
+            display: none; /* Hidden by default */
+            /* Use margin for spacing, not padding */
+            margin-top: var(--spacing-xs);
+            position: static; /* Ensure default static positioning */
+            width: 100%; /* Ensure it takes available width */
+            box-sizing: border-box; /* Include padding in width calculation */
+            border-left: 1px solid var(--accent-secondary); /* Add a visual connection line */
+            margin-left: 5px; /* Align with toggle icon */
+        }
+
+        .folder-item.open > .folder-content {
+            display: block; /* Show when folder is open */
         }
     </style>
 </head>
@@ -477,18 +670,29 @@
                 <div id="searchResults" class="search-results"></div>
             </div>
             
-            <div class="documents-list" id="documentsList"></div>
+            <div class="documents-list" id="documentsList">
+                <!-- Content dynamically generated -->
+            </div>
             
+            <button onclick="createNewFolder()" class="new-folder-button">+ New Folder</button>
             <button onclick="createNewDocument()" class="new-doc-button">+ New Document</button>
         </aside>
 
         <main class="main-content">
             <div class="toolbar">
                 <input type="text" id="documentTitle" placeholder="Untitled">
-                <button class="primary" onclick="saveDocument()">Save</button>
-                <button onclick="downloadFile()">Export</button>
-                <button onclick="createNewDocument()">New</button>
-                <button class="danger" onclick="deleteDocument()" id="deleteButton" disabled>Delete</button>
+                <button class="primary" onclick="saveDocument()" title="Save Document" aria-label="Save Document">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                </button>
+                <button onclick="downloadFile()" title="Export as Markdown" aria-label="Export as Markdown">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                </button>
+                <button onclick="createNewDocument()" title="New Document" aria-label="New Document">
+                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+                </button>
+                <button class="danger" onclick="deleteDocument()" id="deleteButton" disabled title="Delete Document" aria-label="Delete Document">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                </button>
             </div>
 
             <div class="editor-container">
@@ -497,17 +701,26 @@
             </div>
 
             <div class="status-bar">
-                <span id="autoSaveStatus">Auto-save enabled</span>
-                <span id="lastSaved"></span>
+                <div class="status-bar-left">
+                    <span id="autoSaveStatus"></span>
+                </div>
+                <div class="status-bar-right">
+                    <div class="theme-switcher">
+                        <button data-theme="theme-default" title="Default Theme"></button>
+                        <button data-theme="theme-charcoal" title="Charcoal Theme"></button>
+                        <button data-theme="theme-midnight-green" title="Midnight Green Theme"></button>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
 
     <script>
-        let currentDoc = { id: '', title: '', content: '' };
+        let currentDoc = { id: '', title: '', content: '', folderId: null };
+        let currentFolderId = null;
         let autoSaveTimer = null;
         const AUTO_SAVE_DELAY = 3000;
-        let quill; // Declare Quill instance
+        let quill;
         let lastCursorPosition = null;
 
         const SLASH_COMMANDS = [
@@ -525,12 +738,41 @@
             initializeQuill();
             updateSidebar();
             setupAutoSave();
+            setupThemeSwitcher();
+            applySavedTheme();
+            
+            let shouldCreateNew = false;
+            const lastId = getLastOpenedDocumentId();
+            const docs = getDocuments();
+            
+            if (lastId) {
+                const lastDoc = docs.find(d => d.id === lastId);
+                if (lastDoc) {
+                    loadDocument(lastId);
+                } else {
+                    // Last opened document doesn't exist anymore
+                    localStorage.removeItem('lastOpenedDocId');
+                    shouldCreateNew = docs.length === 0;
+                }
+            } else {
+                shouldCreateNew = docs.length === 0;
+            }
+            
+            if (!lastId && docs.length > 0) {
+                // No last document but we have documents - load most recent
+                docs.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+                loadDocument(docs[0].id);
+            } else if (shouldCreateNew) {
+                // Create a new document only if we have no documents
+                createNewDocument();
+            }
         };
 
         function initializeQuill() {
             quill = new Quill('#editor', {
                 theme: 'snow',
                 modules: {
+                    syntax: true,
                     toolbar: [
                         [{ 'header': [1, 2, 3, false] }],
                         ['bold', 'italic', 'underline', 'strike'],
@@ -544,7 +786,6 @@
                 placeholder: 'Type / for commands, or just start writing...'
             });
 
-            // Add slash commands handler
             quill.on('text-change', function(delta, oldDelta, source) {
                 if (source === 'user') {
                     const selection = quill.getSelection();
@@ -565,17 +806,26 @@
                 }
             });
 
-            // Handle clicks outside the menu
             document.addEventListener('click', function(e) {
                 const menu = document.getElementById('slashMenu');
                 const editorContainer = document.querySelector('.editor-container');
-                if (!menu.contains(e.target) && !editorContainer.contains(e.target)) {
+                if (menu && editorContainer && !menu.contains(e.target) && !editorContainer.contains(e.target)) {
                     hideSlashMenu();
                 }
             });
 
-            // Initialize the editor with focus
             quill.focus();
+            updateStatusMessage('Ready');
+
+            setTimeout(() => {
+                document.querySelectorAll('pre.ql-syntax').forEach((block) => {
+                    if (typeof hljs !== 'undefined') {
+                        hljs.highlightElement(block);
+                    } else {
+                        console.warn('highlight.js not loaded, cannot highlight code blocks.');
+                    }
+                });
+            }, 100);
         }
 
         function updateSidebar() {
@@ -588,6 +838,7 @@
                 
                 <div class="documents-list" id="documentsList"></div>
                 
+                <button onclick="createNewFolder()" class="new-folder-button">+ New Folder</button>
                 <button onclick="createNewDocument()" class="new-doc-button">+ New Document</button>
             `;
             
@@ -595,27 +846,143 @@
         }
 
         function loadDocumentsList() {
+            const folders = getFolders();
             const documents = getDocuments();
             const documentsList = document.getElementById('documentsList');
-            
-            // Sort documents by last modified date
-            documents.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
-            
-            documentsList.innerHTML = documents.map(doc => `
-                <div class="document-item${currentDoc.id === doc.id ? ' active' : ''}" onclick="loadDocument('${doc.id}')">
+            let html = '';
+
+            // --- Improved Rendering Logic ---
+            // 1. Render top-level drop zone and documents
+            html += `<div class="documents-root-dropzone"
+                         ondragover="handleDragOver(event)"
+                         ondragleave="handleDragLeave(event, 'documents-root-dropzone')"
+                         ondrop="handleDrop(event, null)">
+                      <h3>Documents</h3>
+                    </div>`;
+            documents
+                .filter(doc => !doc.folderId)
+                .sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified))
+                .forEach(doc => {
+                    html += renderDocumentItem(doc);
+                });
+
+            // 2. Render folders and their documents
+            if (folders.length > 0) {
+                 html += '<h3>Folders</h3>';
+            }
+            folders
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .forEach(folder => {
+                    const folderDocs = documents
+                        .filter(doc => doc.folderId === folder.id)
+                        .sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+                    html += renderFolderItem(folder, folderDocs);
+                });
+            // --- End Improved Rendering Logic ---
+
+            documentsList.innerHTML = html || '<div class="no-results">No documents or folders yet.</div>';
+        }
+
+        function renderDocumentItem(doc) {
+            const isActive = currentDoc.id === doc.id;
+            return `
+                <div class="document-item${isActive ? ' active' : ''}"
+                     onclick="loadDocument('${doc.id}')"
+                     draggable="true"
+                     ondragstart="handleDragStart(event, '${doc.id}')">
                     <span class="doc-title">${doc.title || 'Untitled'}</span>
                     <span class="doc-date">${new Date(doc.lastModified).toLocaleDateString()}</span>
-                    <button onclick="event.stopPropagation(); deleteDocument('${doc.id}')" class="delete-btn" title="Delete">×</button>
+                    <button onclick="event.stopPropagation(); deleteDocument('${doc.id}')" class="delete-btn" title="Delete Document">×</button>
                 </div>
-            `).join('');
+            `;
         }
+
+        function renderFolderItem(folder, folderDocs) {
+            const isActive = currentFolderId === folder.id;
+            // Check for saved open state or default to open
+            const isOpen = folder.state && typeof folder.state.isOpen !== 'undefined' 
+                ? folder.state.isOpen 
+                : true;
+
+            let documentsHTML = '';
+            folderDocs.forEach(doc => {
+                 documentsHTML += renderDocumentItem(doc);
+            });
+
+            return `
+                <div class="folder-item${isActive ? ' active' : ''}${isOpen ? ' open' : ''}" 
+                     data-folder-id="${folder.id}">
+                    <div class="folder-header" 
+                         onclick="toggleFolder('${folder.id}')"
+                         ondragover="handleDragOver(event)"
+                         ondragleave="handleDragLeave(event, 'folder-item')"
+                         ondrop="handleDrop(event, '${folder.id}')">
+                        <svg class="folder-toggle-icon" viewBox="0 0 10 10"><polygon points="2,2 8,5 2,8"/></svg> 
+                        <span class="folder-name">${folder.name}</span>
+                        <span class="folder-controls">
+                            <button onclick="event.stopPropagation(); selectFolder('${folder.id}')" class="select-btn" title="Select Folder">📁</button>
+                            <button onclick="event.stopPropagation(); deleteFolder('${folder.id}')" class="delete-btn danger" title="Delete Folder">×</button>
+                        </span>
+                    </div>
+                    <div class="folder-content">
+                        ${documentsHTML || '<div class="no-results" style="font-size: 12px; padding: 4px 0;">No documents in folder</div>'}
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleFolder(folderId) {
+            const folderItem = document.querySelector(`.folder-item[data-folder-id="${folderId}"]`);
+            if (folderItem) {
+                 folderItem.classList.toggle('open');
+                 // Save folder open state to localStorage for persistence
+                 const folders = getFolders();
+                 const folderIndex = folders.findIndex(f => f.id === folderId);
+                 if (folderIndex !== -1) {
+                     if (!folders[folderIndex].state) folders[folderIndex].state = {};
+                     folders[folderIndex].state.isOpen = folderItem.classList.contains('open');
+                     saveFolders(folders);
+                 }
+            }
+        }
+
+        function selectFolder(folderId) {
+            console.log("Selecting folder:", folderId);
+
+            // If already selected, do nothing
+            if (currentFolderId === folderId) {
+                return;
+            }
+
+            currentFolderId = folderId;
+            currentDoc = { id: '', title: '', content: '', folderId: null }; // Clear doc state
+
+            // Manually update active classes
+            document.querySelectorAll('.sidebar .active').forEach(el => el.classList.remove('active'));
+            const folderElement = document.querySelector(`.folder-item[data-folder-id="${folderId}"]`); 
+            if (folderElement) {
+                 folderElement.classList.add('active');
+            }
+
+            // Clear editor
+            document.getElementById('documentTitle').value = '';
+            quill.root.innerHTML = '';
+            document.getElementById('deleteButton').disabled = true;
+            updateStatusMessage('Folder selected');
+         }
 
         function saveDocument(isAutoSave = false) {
             const titleInput = document.getElementById('documentTitle');
             const title = titleInput.value.trim();
-            
-            if (!title && !isAutoSave) {
-                alert('Please enter a document title');
+
+            // Don't save new documents automatically
+            if (isAutoSave && !currentDoc.id) {
+                updateStatusMessage('Save needed');
+                return;
+            }
+
+            if (!title && !isAutoSave && !currentDoc.id) {
+                alert('Please enter a document title for this new document before saving.');
                 return;
             }
 
@@ -626,34 +993,50 @@
                 id: currentDoc.id || Date.now().toString(),
                 title: title || 'Untitled',
                 content: content,
-                lastModified: new Date().toISOString()
+                lastModified: new Date().toISOString(),
+                folderId: currentDoc.folderId
             };
 
-            if (currentDoc.id) {
-                const index = documents.findIndex(doc => doc.id === currentDoc.id);
-                if (index !== -1) {
-                    documents[index] = newDoc;
-                } else {
-                    documents.push(newDoc);
-                }
+            const existingIndex = documents.findIndex(doc => doc.id === newDoc.id);
+            if (existingIndex !== -1) {
+                documents[existingIndex] = newDoc;
             } else {
                 documents.push(newDoc);
             }
 
             localStorage.setItem('documents', JSON.stringify(documents));
             currentDoc = newDoc;
-            
-            loadDocumentsList();
-            document.getElementById('deleteButton').disabled = false;
 
-            if (!isAutoSave) {
-                updateLastSaved();
+            loadDocumentsList();
+            if (titleInput.value !== newDoc.title) {
+               titleInput.value = newDoc.title;
+            }
+            document.getElementById('deleteButton').disabled = false;
+            localStorage.setItem('lastOpenedDocId', currentDoc.id);
+
+            if (isAutoSave) {
+                updateStatusMessage('All changes saved');
+            } else {
+                if (!currentDoc.id) {
+                    newDoc.folderId = currentFolderId;
+                    currentDoc.folderId = currentFolderId;
+                }
+                updateStatusMessage(`Saved: ${new Date().toLocaleTimeString()}`);
+            }
+
+            if (!isAutoSave && !currentDoc.id) {
+                const docs = getDocuments();
+                const idx = docs.findIndex(d => d.id === newDoc.id);
+                if (idx !== -1) {
+                    docs[idx] = newDoc;
+                    localStorage.setItem('documents', JSON.stringify(docs));
+                }
             }
         }
 
         function loadDocument(docId) {
             if (!docId) {
-                createNewDocument();
+                createNewDocument(); // Will deselect folder
                 return;
             }
 
@@ -662,23 +1045,47 @@
             
             if (doc) {
                 currentDoc = doc;
+                currentFolderId = null; // Deselect folder when loading a doc
+
+                // Manually update active classes
+                document.querySelectorAll('.sidebar .active').forEach(el => el.classList.remove('active'));
+                const docElement = document.querySelector(`.document-item[onclick="loadDocument('${doc.id}')"]`);
+                if (docElement) {
+                    docElement.classList.add('active');
+                }
+
                 document.getElementById('documentTitle').value = doc.title;
                 quill.root.innerHTML = doc.content;
                 document.getElementById('deleteButton').disabled = false;
-                loadDocumentsList(); // Refresh list to show active state
+                localStorage.setItem('lastOpenedDocId', doc.id);
+                updateStatusMessage('Document loaded');
+            } else {
+                console.warn(`Document with ID ${docId} not found. Loading new document.`);
+                createNewDocument();
             }
         }
 
         function createNewDocument() {
-            currentDoc = { id: '', title: '', content: '' };
+            currentDoc = { id: '', title: '', content: '', folderId: currentFolderId };
+            const wasFolderSelected = currentFolderId !== null;
+            currentFolderId = null; // Deselect folder when creating new doc
+
+            // Manually update active classes if a folder was previously selected
+            if (wasFolderSelected) {
+                 document.querySelectorAll('.sidebar .folder-item.active').forEach(el => el.classList.remove('active'));
+            }
+             // Also remove active from any doc item (though shouldn't be active)
+             document.querySelectorAll('.sidebar .document-item.active').forEach(el => el.classList.remove('active'));
+
             document.getElementById('documentTitle').value = '';
             quill.root.innerHTML = '';
             document.getElementById('deleteButton').disabled = true;
-            loadDocumentsList();
+            updateStatusMessage('New document');
+            localStorage.setItem('lastOpenedDocId', '');
+            quill.focus();
         }
 
         function deleteDocument(docId = null) {
-            // If no docId provided, use the current document's id
             const idToDelete = docId || currentDoc.id;
             if (!idToDelete) return;
             
@@ -686,14 +1093,14 @@
             const doc = documents.find(d => d.id === idToDelete);
             if (!doc) return;
             
-            if (!confirm(`Are you sure you want to delete "${doc.title || 'Untitled'}"?`)) {
+            const docTitle = doc.title || 'Untitled';
+            
+            if (!confirm(`Are you sure you want to delete "${docTitle}"?`)) {
                 return;
             }
 
-            // Remove the document from storage
             localStorage.setItem('documents', JSON.stringify(documents.filter(d => d.id !== idToDelete)));
             
-            // If we're deleting the current document, create a new one
             if (currentDoc.id === idToDelete) {
                 createNewDocument();
             } else {
@@ -714,7 +1121,7 @@
 
             const documents = getDocuments();
             const results = documents.filter(doc => {
-                const plainTextContent = stripHtml(doc.content); // We'll define this helper function
+                const plainTextContent = stripHtml(doc.content);
                 return doc.title.toLowerCase().includes(searchTerm) || 
                        plainTextContent.toLowerCase().includes(searchTerm);
             });
@@ -782,31 +1189,53 @@
         }
 
         function setupAutoSave() {
-            quill.on('text-change', () => {
-                clearTimeout(autoSaveTimer);
-                autoSaveTimer = setTimeout(() => {
-                    if (currentDoc.id) {
-                        saveDocument(true);
-                        updateLastSaved();
-                    }
-                }, AUTO_SAVE_DELAY);
+            let isTyping = false;
+            let typingTimer = null;
+            const TYPING_DELAY = 500;
+
+            quill.on('text-change', (delta, oldDelta, source) => {
+                if (source === 'user' && currentDoc.id) {
+                    // Only auto-save existing documents
+                    updateStatusMessage('Unsaved changes');
+                    clearTimeout(autoSaveTimer);
+                    clearTimeout(typingTimer);
+
+                    isTyping = true;
+                    typingTimer = setTimeout(() => {
+                        isTyping = false;
+                        updateStatusMessage('Saving...');
+                        autoSaveTimer = setTimeout(() => {
+                            saveDocument(true);
+                        }, AUTO_SAVE_DELAY);
+                    }, TYPING_DELAY);
+                } else if (source === 'user' && !currentDoc.id) {
+                    // For new documents, just show status but don't auto-save
+                    updateStatusMessage('Save needed');
+                }
             });
         }
 
-        function updateLastSaved() {
-            const lastSaved = document.getElementById('lastSaved');
-            lastSaved.textContent = `Last saved: ${new Date().toLocaleTimeString()}`;
+        function updateStatusMessage(message) {
+            const status = document.getElementById('autoSaveStatus');
+            status.textContent = message;
+            
+            if (message === 'Saving...' || message === 'Document loaded' || message.startsWith('Saved:')) {
+                setTimeout(() => {
+                    if (status.textContent === message) {
+                    }
+                }, 4000);
+            }
         }
 
         function downloadFile() {
-            const content = quill.root.innerText;
             const title = document.getElementById('documentTitle').value.trim() || 'untitled';
+            const htmlContent = quill.root.innerHTML;
+            const markdownContent = htmlToMarkdown(htmlContent);
             
-            // Create a blob with plain text content
-            const blob = new Blob([content], { type: 'text/plain' });
+            const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `${title}.txt`;
+            a.download = `${title}.md`;
             
             document.body.appendChild(a);
             a.click();
@@ -820,20 +1249,88 @@
             return docs ? JSON.parse(docs) : [];
         }
 
+        function getLastOpenedDocumentId() {
+            return localStorage.getItem('lastOpenedDocId') || '';
+        }
+
+        function htmlToMarkdown(html) {
+            let tempElement = document.createElement('div');
+            tempElement.innerHTML = html;
+            
+            let markdown = tempElement.innerHTML;
+            
+            markdown = markdown.replace(/<p><br><\/p>/gi, '\\n');
+            markdown = markdown.replace(/<p>(.*?)<\/p>/gi, '$1\\n\\n');
+            
+            markdown = markdown.replace(/<h1>(.*?)<\/h1>/gi, '# $1\\n\\n');
+            markdown = markdown.replace(/<h2>(.*?)<\/h2>/gi, '## $1\\n\\n');
+            markdown = markdown.replace(/<h3>(.*?)<\/h3>/gi, '### $1\\n\\n');
+            
+            markdown = markdown.replace(/<strong>(.*?)<\/strong>/gi, '**$1**');
+            markdown = markdown.replace(/<b>(.*?)<\/b>/gi, '**$1**');
+            
+            markdown = markdown.replace(/<em>(.*?)<\/em>/gi, '*$1*');
+            markdown = markdown.replace(/<i>(.*?)<\/i>/gi, '*$1*');
+            
+            markdown = markdown.replace(/<s>(.*?)<\/s>/gi, '~~$1~~');
+            
+            markdown = markdown.replace(/<blockquote>(.*?)<\/blockquote>/gi, (match, content) => `> ${content.trim()}\\n\\n`);
+            
+            markdown = markdown.replace(/<pre.*?>(.*?)<\/pre>/gis, (match, content) => {
+                const tempPre = document.createElement('div');
+                tempPre.innerHTML = content;
+                const decodedContent = tempPre.textContent || tempPre.innerText || '';
+                return `\\n\`\`\`\\n${decodedContent.trim()}\\n\`\`\`\\n\\n`;
+            });
+            
+            markdown = markdown.replace(/<ul>(.*?)<\/ul>/gis, (match, content) => {
+                return content.replace(/<li>(.*?)<\/li>/gi, (liMatch, liContent) => `* ${liContent.trim()}\\n`).trim() + '\\n\\n';
+            });
+            
+            markdown = markdown.replace(/<ol>(.*?)<\/ol>/gis, (match, content) => {
+                let i = 1;
+                const items = content.split(/<li>(.*?)<\/li>/gi).filter(item => item.trim() !== '');
+                let mdList = '';
+                items.forEach(item => {
+                   mdList += `${i++}. ${item.trim()}\\n`;
+                });
+                return mdList.trim() + '\\n\\n';
+            });
+            
+            markdown = markdown.replace(/<a href="(.*?)".*?>(.*?)<\/a>/gi, '[$2]($1)');
+            
+            markdown = markdown.replace(/<img src="(.*?)"(.*?)>/gi, (match, src, altAttr) => {
+                const altMatch = altAttr.match(/alt="(.*?)"/);
+                const altText = altMatch ? altMatch[1] : '';
+                return `![${altText}](${src})`;
+            });
+            
+            markdown = markdown.replace(/<hr>/gi, '\\n---\\n\\n');
+            
+            markdown = stripHtml(markdown);
+            
+            const decoder = document.createElement('div');
+            decoder.innerHTML = markdown;
+            markdown = decoder.textContent;
+            
+            markdown = markdown.replace(/\\n{3,}/g, '\\n\\n');
+            markdown = markdown.replace(/^\\n+|\\n+$/g, '');
+            
+            return markdown.trim();
+        }
+
         function showSlashMenu(position) {
             const bounds = quill.getBounds(position - 1);
             const slashMenu = document.getElementById('slashMenu');
             const editorContainer = document.querySelector('.editor-container');
             const editorBounds = editorContainer.getBoundingClientRect();
             
-            // Calculate position relative to the editor container
             const top = bounds.top + bounds.height;
             const left = bounds.left;
             
             slashMenu.style.top = `${top}px`;
             slashMenu.style.left = `${left}px`;
             
-            // Generate menu items
             slashMenu.innerHTML = SLASH_COMMANDS.map(cmd => `
                 <div class="slash-menu-item" data-label="${cmd.label}">
                     <span class="icon">${cmd.icon}</span>
@@ -842,7 +1339,6 @@
                 </div>
             `).join('');
             
-            // Add click handlers to menu items
             slashMenu.querySelectorAll('.slash-menu-item').forEach(item => {
                 item.addEventListener('click', () => {
                     executeCommand(item.dataset.label);
@@ -851,13 +1347,11 @@
             
             slashMenu.classList.add('active');
             
-            // Select first item
             const firstItem = slashMenu.querySelector('.slash-menu-item');
             if (firstItem) {
                 firstItem.classList.add('active');
             }
 
-            // Ensure menu is fully visible
             setTimeout(() => {
                 const menuBounds = slashMenu.getBoundingClientRect();
                 if (menuBounds.right > editorBounds.right) {
@@ -877,22 +1371,16 @@
         function executeCommand(label) {
             const command = SLASH_COMMANDS.find(cmd => cmd.label === label);
             if (command && lastCursorPosition !== null) {
-                // Delete the slash character
                 quill.deleteText(lastCursorPosition - 1, 1);
                 
-                // Set selection back to where it was
                 quill.setSelection(lastCursorPosition - 1);
                 
-                // Execute the command
                 command.action();
                 
-                // Hide the menu
                 hideSlashMenu();
                 
-                // Reset the cursor position
                 lastCursorPosition = null;
                 
-                // Ensure editor keeps focus
                 quill.focus();
             }
         }
@@ -910,7 +1398,6 @@
             }
         }
 
-        // Update keyboard navigation
         document.addEventListener('keydown', function(e) {
             const menu = document.getElementById('slashMenu');
             if (!menu.classList.contains('active')) return;
@@ -951,8 +1438,140 @@
             items[index]?.scrollIntoView({ block: 'nearest' });
         });
 
-        // Initialize empty document
-        createNewDocument();
+        function setupThemeSwitcher() {
+            const switcher = document.querySelector('.theme-switcher');
+            if (!switcher) return;
+            switcher.addEventListener('click', (event) => {
+                if (event.target.tagName === 'BUTTON') {
+                    const theme = event.target.dataset.theme;
+                    applyTheme(theme);
+                }
+            });
+        }
+
+        function applyTheme(themeName) {
+            document.body.className = themeName;
+            localStorage.setItem('selectedTheme', themeName);
+            updateThemeSwitcherUI(themeName);
+            
+            const editor = document.querySelector('.ql-editor');
+            if (editor) {
+            }
+        }
+
+        function applySavedTheme() {
+            const savedTheme = localStorage.getItem('selectedTheme') || 'theme-default';
+            applyTheme(savedTheme);
+        }
+
+        function updateThemeSwitcherUI(activeTheme) {
+            const buttons = document.querySelectorAll('.theme-switcher button');
+            buttons.forEach(button => {
+                if (button.dataset.theme === activeTheme) {
+                    button.classList.add('active');
+                } else {
+                    button.classList.remove('active');
+                }
+            });
+        }
+
+        function getFolders() {
+            const folders = localStorage.getItem('folders');
+            return folders ? JSON.parse(folders) : [];
+        }
+
+        function saveFolders(folders) {
+            localStorage.setItem('folders', JSON.stringify(folders));
+        }
+
+        function createNewFolder() {
+            const folderName = prompt("Enter folder name:");
+            if (!folderName || folderName.trim() === '') {
+                return;
+            }
+
+            const folders = getFolders();
+            const newFolder = {
+                id: 'folder_' + Date.now().toString(),
+                name: folderName.trim()
+            };
+
+            folders.push(newFolder);
+            saveFolders(folders);
+            loadDocumentsList();
+        }
+
+        function deleteFolder(folderId) {
+            const folders = getFolders();
+            const folder = folders.find(f => f.id === folderId);
+            if (!folder) return;
+
+            if (!confirm(`Are you sure you want to delete the folder "${folder.name}"? Documents inside will be moved to the root.`)) {
+                return;
+            }
+
+            let documents = getDocuments();
+            documents = documents.map(doc => {
+                if (doc.folderId === folderId) {
+                    return { ...doc, folderId: null };
+                }
+                return doc;
+            });
+            localStorage.setItem('documents', JSON.stringify(documents));
+
+            const updatedFolders = folders.filter(f => f.id !== folderId);
+            saveFolders(updatedFolders);
+
+            // If the deleted folder was selected, deselect it
+            if (currentFolderId === folderId) {
+                currentFolderId = null;
+            }
+
+            loadDocumentsList(); // Refresh sidebar
+        }
+
+        // --- Drag and Drop Handlers ---
+        function handleDragStart(event, docId) {
+            event.dataTransfer.setData('text/plain', docId);
+            event.dataTransfer.effectAllowed = 'move';
+            // Optional: Add a dragging class for visual feedback
+        }
+
+        function handleDragOver(event) {
+            event.preventDefault(); // Necessary to allow dropping
+            event.dataTransfer.dropEffect = 'move';
+            // Add visual cue to the target element
+             event.currentTarget.classList.add('drag-over');
+        }
+
+         function handleDragLeave(event, className) {
+             // Remove visual cue if not dragging over a child
+             if (!event.currentTarget.contains(event.relatedTarget)) {
+                 event.currentTarget.classList.remove('drag-over');
+             }
+         }
+
+        function handleDrop(event, targetFolderId) {
+            event.preventDefault();
+            event.currentTarget.classList.remove('drag-over');
+            const docId = event.dataTransfer.getData('text/plain');
+            const documents = getDocuments();
+            const docIndex = documents.findIndex(d => d.id === docId);
+
+            if (docIndex !== -1 && documents[docIndex].folderId !== targetFolderId) {
+                console.log(`Moving doc ${docId} to folder ${targetFolderId}`);
+                documents[docIndex].folderId = targetFolderId;
+                localStorage.setItem('documents', JSON.stringify(documents));
+                loadDocumentsList(); // Re-render the sidebar
+
+                // If the currently loaded doc was moved, update its state
+                if (currentDoc.id === docId) {
+                    currentDoc.folderId = targetFolderId;
+                }
+            } else {
+                 console.log(`Drop ignored: Doc ${docId} already in folder ${targetFolderId} or not found.`);
+            }
+        }
     </script>
 </body>
 </html>
