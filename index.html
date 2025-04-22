@@ -1993,18 +1993,17 @@
                 });
             });
             
-            // Also close when clicking a folder on mobile
+            // DON'T close sidebar when clicking a folder toggle or folder header
             document.querySelectorAll('.folder-header').forEach(header => {
                 header.addEventListener('click', (e) => {
-                    // Don't close when toggling folder open/closed
-                    if (e.target.classList.contains('folder-toggle-icon') || 
-                        e.target.closest('.folder-toggle-icon')) {
-                        return;
-                    }
-                    
-                    if (window.innerWidth <= 768) {
+                    // Only close if it's a select folder button click
+                    const isSelectBtn = e.target.classList.contains('select-btn') || 
+                                       e.target.closest('.select-btn');
+                        
+                    if (isSelectBtn && window.innerWidth <= 768) {
                         toggleSidebar();
                     }
+                    // For normal folder clicks or toggle clicks, keep sidebar open
                 });
             });
         }
@@ -2081,14 +2080,17 @@
                     item.addEventListener('click', closeSidebar);
                 });
                 
+                // Only close on select folder button clicks
                 document.querySelectorAll('.folder-header').forEach(header => {
                     header.addEventListener('click', (e) => {
-                        // Don't close when toggling folder open/closed
-                        if (e.target.classList.contains('folder-toggle-icon') || 
-                            e.target.closest('.folder-toggle-icon')) {
-                            return;
+                        // Only close if it's a select folder button click
+                        const isSelectBtn = e.target.classList.contains('select-btn') || 
+                                           e.target.closest('.select-btn');
+                            
+                        if (isSelectBtn) {
+                            closeSidebar();
                         }
-                        closeSidebar();
+                        // Keep sidebar open for normal folder clicks or toggle clicks
                     });
                 });
             }
