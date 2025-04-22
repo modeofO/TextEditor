@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.quilljs.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.quilljs.com https://cdnjs.cloudflare.com; img-src 'self' data:;">
     <title>Thoughts</title>
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
@@ -814,7 +815,11 @@
                 }
             });
 
-            quill.focus();
+            // Wait for editor to be fully initialized before focusing
+            setTimeout(() => {
+                quill.focus();
+            }, 0);
+            
             updateStatusMessage('Ready');
 
             setTimeout(() => {
@@ -883,22 +888,42 @@
             documentsList.innerHTML = html || '<div class="no-results">No documents or folders yet.</div>';
         }
 
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function escapeAttribute(value) {
+            return String(value).replace(/[^\w\s-]/gi, '');
+        }
+
         function renderDocumentItem(doc) {
             const isActive = currentDoc.id === doc.id;
+            const safeId = escapeAttribute(doc.id);
+            const safeTitle = escapeHtml(doc.title || 'Untitled');
+            const safeDate = new Date(doc.lastModified).toLocaleDateString();
+            
             return `
                 <div class="document-item${isActive ? ' active' : ''}"
-                     onclick="loadDocument('${doc.id}')"
+                     onclick="loadDocument('${safeId}')"
                      draggable="true"
-                     ondragstart="handleDragStart(event, '${doc.id}')">
-                    <span class="doc-title">${doc.title || 'Untitled'}</span>
-                    <span class="doc-date">${new Date(doc.lastModified).toLocaleDateString()}</span>
-                    <button onclick="event.stopPropagation(); deleteDocument('${doc.id}')" class="delete-btn" title="Delete Document">×</button>
+                     ondragstart="handleDragStart(event, '${safeId}')">
+                    <span class="doc-title">${safeTitle}</span>
+                    <span class="doc-date">${safeDate}</span>
+                    <button onclick="event.stopPropagation(); deleteDocument('${safeId}')" class="delete-btn" title="Delete Document">×</button>
                 </div>
             `;
         }
 
         function renderFolderItem(folder, folderDocs) {
             const isActive = currentFolderId === folder.id;
+            const safeId = escapeAttribute(folder.id);
+            const safeName = escapeHtml(folder.name);
+            
             // Check for saved open state or default to open
             const isOpen = folder.state && typeof folder.state.isOpen !== 'undefined' 
                 ? folder.state.isOpen 
@@ -911,17 +936,17 @@
 
             return `
                 <div class="folder-item${isActive ? ' active' : ''}${isOpen ? ' open' : ''}" 
-                     data-folder-id="${folder.id}">
+                     data-folder-id="${safeId}">
                     <div class="folder-header" 
-                         onclick="toggleFolder('${folder.id}')"
+                         onclick="toggleFolder('${safeId}')"
                          ondragover="handleDragOver(event)"
                          ondragleave="handleDragLeave(event, 'folder-item')"
-                         ondrop="handleDrop(event, '${folder.id}')">
+                         ondrop="handleDrop(event, '${safeId}')">
                         <svg class="folder-toggle-icon" viewBox="0 0 10 10"><polygon points="2,2 8,5 2,8"/></svg> 
-                        <span class="folder-name">${folder.name}</span>
+                        <span class="folder-name">${safeName}</span>
                         <span class="folder-controls">
-                            <button onclick="event.stopPropagation(); selectFolder('${folder.id}')" class="select-btn" title="Select Folder">📁</button>
-                            <button onclick="event.stopPropagation(); deleteFolder('${folder.id}')" class="delete-btn danger" title="Delete Folder">×</button>
+                            <button onclick="event.stopPropagation(); selectFolder('${safeId}')" class="select-btn" title="Select Folder">📁</button>
+                            <button onclick="event.stopPropagation(); deleteFolder('${safeId}')" class="delete-btn danger" title="Delete Folder">×</button>
                         </span>
                     </div>
                     <div class="folder-content">
@@ -947,6 +972,12 @@
         }
 
         function selectFolder(folderId) {
+            // Validate the folder ID
+            if (!folderId || !isValidId(folderId)) {
+                console.warn("Invalid folder ID provided");
+                return;
+            }
+
             console.log("Selecting folder:", folderId);
 
             // If already selected, do nothing
@@ -959,7 +990,7 @@
 
             // Manually update active classes
             document.querySelectorAll('.sidebar .active').forEach(el => el.classList.remove('active'));
-            const folderElement = document.querySelector(`.folder-item[data-folder-id="${folderId}"]`); 
+            const folderElement = document.querySelector(`.folder-item[data-folder-id="${escapeAttribute(folderId)}"]`); 
             if (folderElement) {
                  folderElement.classList.add('active');
             }
@@ -992,7 +1023,7 @@
             const newDoc = {
                 id: currentDoc.id || Date.now().toString(),
                 title: title || 'Untitled',
-                content: content,
+                content: sanitizeHtml(content),
                 lastModified: new Date().toISOString(),
                 folderId: currentDoc.folderId
             };
@@ -1035,8 +1066,10 @@
         }
 
         function loadDocument(docId) {
-            if (!docId) {
-                createNewDocument(); // Will deselect folder
+            // Validate the document ID
+            if (!docId || !isValidId(docId)) {
+                console.warn("Invalid document ID provided");
+                createNewDocument();
                 return;
             }
 
@@ -1049,13 +1082,22 @@
 
                 // Manually update active classes
                 document.querySelectorAll('.sidebar .active').forEach(el => el.classList.remove('active'));
-                const docElement = document.querySelector(`.document-item[onclick="loadDocument('${doc.id}')"]`);
+                const docElement = document.querySelector(`.document-item[onclick="loadDocument('${escapeAttribute(doc.id)}')"]`);
                 if (docElement) {
                     docElement.classList.add('active');
                 }
 
                 document.getElementById('documentTitle').value = doc.title;
-                quill.root.innerHTML = doc.content;
+                
+                // Sanitize content before loading into the editor
+                quill.root.innerHTML = sanitizeHtml(doc.content);
+                
+                // Wait for content to be fully loaded before any operations
+                setTimeout(() => {
+                    // Move cursor to the beginning of the document
+                    quill.setSelection(0, 0);
+                }, 0);
+                
                 document.getElementById('deleteButton').disabled = false;
                 localStorage.setItem('lastOpenedDocId', doc.id);
                 updateStatusMessage('Document loaded');
@@ -1087,7 +1129,12 @@
 
         function deleteDocument(docId = null) {
             const idToDelete = docId || currentDoc.id;
-            if (!idToDelete) return;
+            
+            // Validate document ID
+            if (!idToDelete || !isValidId(idToDelete)) {
+                console.warn("Invalid document ID for deletion");
+                return;
+            }
             
             const documents = getDocuments();
             const doc = documents.find(d => d.id === idToDelete);
@@ -1095,16 +1142,33 @@
             
             const docTitle = doc.title || 'Untitled';
             
-            if (!confirm(`Are you sure you want to delete "${docTitle}"?`)) {
+            if (!confirm(`Are you sure you want to delete "${escapeHtml(docTitle)}"?`)) {
                 return;
             }
-
-            localStorage.setItem('documents', JSON.stringify(documents.filter(d => d.id !== idToDelete)));
             
+            // Provide immediate visual feedback by removing the document from the UI
+            const docElement = document.querySelector(`.document-item[onclick="loadDocument('${escapeAttribute(idToDelete)}')"]`);
+            if (docElement) {
+                // Fade out the element
+                docElement.style.transition = "opacity 0.2s";
+                docElement.style.opacity = "0";
+                setTimeout(() => {
+                    // Remove from DOM after fade
+                    docElement.remove();
+                }, 200);
+            }
+            
+            // Remove from localStorage
+            const updatedDocuments = documents.filter(d => d.id !== idToDelete);
+            localStorage.setItem('documents', JSON.stringify(updatedDocuments));
+            
+            // If the currently active document is being deleted, create a new one
             if (currentDoc.id === idToDelete) {
                 createNewDocument();
             } else {
-                loadDocumentsList();
+                // Update status message
+                updateStatusMessage(`"${escapeHtml(docTitle)}" deleted`);
+                // Don't reload the full list - we already updated the UI
             }
         }
 
@@ -1134,19 +1198,24 @@
                 return;
             }
 
-            resultsDiv.innerHTML = results.map(doc => {
+            let resultsHTML = '';
+            results.forEach(doc => {
                 const plainTextContent = stripHtml(doc.content);
                 const contentPreview = getContentPreview(plainTextContent, searchTerm);
                 const lastModified = new Date(doc.lastModified).toLocaleDateString();
+                const safeId = escapeAttribute(doc.id);
+                const safeTitle = escapeHtml(doc.title || 'Untitled');
                 
-                return `
-                    <div class="search-result-item" onclick="selectSearchResult('${doc.id}')">
-                        <div class="search-result-title">${highlightMatch(doc.title, searchTerm)}</div>
+                resultsHTML += `
+                    <div class="search-result-item" onclick="selectSearchResult('${safeId}')">
+                        <div class="search-result-title">${highlightMatch(safeTitle, searchTerm)}</div>
                         <div class="search-result-preview">${contentPreview}</div>
                         <div class="search-result-date">Modified: ${lastModified}</div>
                     </div>
                 `;
-            }).join('');
+            });
+            
+            resultsDiv.innerHTML = resultsHTML;
         }
 
         function stripHtml(html) {
@@ -1173,8 +1242,14 @@
         }
 
         function highlightMatch(text, searchTerm) {
-            const regex = new RegExp(`(${escapeRegExp(searchTerm)})`, 'gi');
-            return text.replace(regex, '<mark>$1</mark>');
+            // Escape HTML in the text first
+            const safeText = escapeHtml(text);
+            // Escape regex special characters in the search term
+            const safeSearchTerm = escapeRegExp(searchTerm);
+            const regex = new RegExp(`(${safeSearchTerm})`, 'gi');
+            
+            // Now highlight with mark tags
+            return safeText.replace(regex, '<mark>$1</mark>');
         }
 
         function escapeRegExp(string) {
@@ -1371,9 +1446,16 @@
         function executeCommand(label) {
             const command = SLASH_COMMANDS.find(cmd => cmd.label === label);
             if (command && lastCursorPosition !== null) {
-                quill.deleteText(lastCursorPosition - 1, 1);
+                // Delete the slash character if it exists
+                if (lastCursorPosition > 0) {
+                    quill.deleteText(lastCursorPosition - 1, 1);
+                }
                 
-                quill.setSelection(lastCursorPosition - 1);
+                // Only try to set selection if document has content
+                const length = quill.getLength();
+                if (length > 1 && lastCursorPosition > 0 && lastCursorPosition <= length) {
+                    quill.setSelection(lastCursorPosition - 1);
+                }
                 
                 command.action();
                 
@@ -1485,15 +1567,24 @@
         }
 
         function createNewFolder() {
-            const folderName = prompt("Enter folder name:");
+            let folderName = prompt("Enter folder name:");
             if (!folderName || folderName.trim() === '') {
                 return;
+            }
+            
+            // Sanitize folder name
+            folderName = folderName.trim();
+            folderName = escapeHtml(folderName);
+            
+            // Limit length 
+            if (folderName.length > 50) {
+                folderName = folderName.substring(0, 50);
             }
 
             const folders = getFolders();
             const newFolder = {
                 id: 'folder_' + Date.now().toString(),
-                name: folderName.trim()
+                name: folderName
             };
 
             folders.push(newFolder);
@@ -1502,14 +1593,33 @@
         }
 
         function deleteFolder(folderId) {
+            // Validate folder ID
+            if (!folderId || !isValidId(folderId)) {
+                console.warn("Invalid folder ID for deletion");
+                return;
+            }
+            
             const folders = getFolders();
             const folder = folders.find(f => f.id === folderId);
             if (!folder) return;
 
-            if (!confirm(`Are you sure you want to delete the folder "${folder.name}"? Documents inside will be moved to the root.`)) {
+            if (!confirm(`Are you sure you want to delete the folder "${escapeHtml(folder.name)}"? Documents inside will be moved to the root.`)) {
                 return;
             }
 
+            // Provide immediate visual feedback by removing the folder from the UI
+            const folderElement = document.querySelector(`.folder-item[data-folder-id="${escapeAttribute(folderId)}"]`);
+            if (folderElement) {
+                // Fade out the element
+                folderElement.style.transition = "opacity 0.2s";
+                folderElement.style.opacity = "0";
+                setTimeout(() => {
+                    // Remove from DOM after fade
+                    folderElement.remove();
+                }, 200);
+            }
+            
+            // Update documents in localStorage
             let documents = getDocuments();
             documents = documents.map(doc => {
                 if (doc.folderId === folderId) {
@@ -1519,15 +1629,45 @@
             });
             localStorage.setItem('documents', JSON.stringify(documents));
 
+            // Update folders in localStorage
             const updatedFolders = folders.filter(f => f.id !== folderId);
             saveFolders(updatedFolders);
 
             // If the deleted folder was selected, deselect it
             if (currentFolderId === folderId) {
                 currentFolderId = null;
+                // Clear editor
+                document.getElementById('documentTitle').value = '';
+                quill.root.innerHTML = '';
+                document.getElementById('deleteButton').disabled = true;
             }
-
-            loadDocumentsList(); // Refresh sidebar
+            
+            // Refresh documents at root level (where documents from deleted folder will appear)
+            const rootDocuments = documents.filter(doc => !doc.folderId);
+            if (rootDocuments.length > 0) {
+                // Update documents section if necessary
+                const documentsSection = document.querySelector('.documents-root-dropzone').nextElementSibling;
+                if (documentsSection) {
+                    let html = '';
+                    rootDocuments
+                        .sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified))
+                        .forEach(doc => {
+                            html += renderDocumentItem(doc);
+                        });
+                    
+                    // Insert the updated document items after the documents heading
+                    const docsContainer = document.createElement('div');
+                    docsContainer.innerHTML = html;
+                    
+                    // Append the newly moved documents to the root section
+                    Array.from(docsContainer.children).forEach(child => {
+                        documentsSection.parentNode.insertBefore(child, documentsSection.nextSibling);
+                    });
+                }
+            }
+            
+            // Show status message
+            updateStatusMessage(`Folder "${escapeHtml(folder.name)}" deleted`);
         }
 
         // --- Drag and Drop Handlers ---
@@ -1571,6 +1711,41 @@
             } else {
                  console.log(`Drop ignored: Doc ${docId} already in folder ${targetFolderId} or not found.`);
             }
+        }
+
+        function sanitizeHtml(html) {
+            // Create a new div element
+            const div = document.createElement('div');
+            // Set the HTML content
+            div.innerHTML = html;
+            
+            // Remove all script tags
+            const scripts = div.getElementsByTagName('script');
+            while (scripts[0]) {
+                scripts[0].parentNode.removeChild(scripts[0]);
+            }
+            
+            // Remove event handlers and javascript: URLs
+            const allElements = div.getElementsByTagName('*');
+            for (let i = 0; i < allElements.length; i++) {
+                const element = allElements[i];
+                const attributes = element.attributes;
+                for (let j = 0; j < attributes.length; j++) {
+                    const attr = attributes[j];
+                    if (attr.name.startsWith('on') || (attr.name === 'href' && attr.value.toLowerCase().startsWith('javascript:'))) {
+                        element.removeAttribute(attr.name);
+                        j--; // Adjust index after removal
+                    }
+                }
+            }
+            
+            // Return the sanitized HTML
+            return div.innerHTML;
+        }
+
+        function isValidId(id) {
+            // Validate that the ID only contains alphanumeric characters, underscores, or hyphens
+            return /^[\w-]+$/.test(id);
         }
     </script>
 </body>
