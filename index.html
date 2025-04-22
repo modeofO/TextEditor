@@ -25,6 +25,7 @@
             --spacing-md: 16px;
             --spacing-lg: 24px;
             --transition: all 0.2s ease;
+            --sidebar-width: 250px;
         }
 
         * {
@@ -49,7 +50,7 @@
 
         .container {
             display: grid;
-            grid-template-columns: 250px 1fr;
+            grid-template-columns: var(--sidebar-width) 1fr;
             gap: var(--spacing-lg);
             height: calc(100vh - 48px);
         }
@@ -63,6 +64,7 @@
             gap: var(--spacing-md);
             height: 100%;
             overflow: hidden;
+            z-index: 10; /* Ensure sidebar appears above content when toggled */
         }
 
         .main-content {
@@ -661,9 +663,96 @@
         .folder-item.open > .folder-content {
             display: block; /* Show when folder is open */
         }
+
+        /* Mobile toggle button (hidden on desktop) */
+        .sidebar-toggle {
+            display: none;
+            position: fixed;
+            top: var(--spacing-md);
+            left: var(--spacing-md);
+            background: var(--accent-primary);
+            color: var(--text-primary);
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 18px;
+            cursor: pointer;
+            z-index: 20;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Responsive design adjustments */
+        @media (max-width: 768px) {
+            body {
+                padding: var(--spacing-sm);
+            }
+            
+            .container {
+                grid-template-columns: 1fr;
+                height: calc(100vh - 24px);
+            }
+            
+            .sidebar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                bottom: 0;
+                width: 280px;
+                max-width: 80vw;
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+                border-radius: 0;
+                border-right: 1px solid var(--accent-secondary);
+            }
+            
+            .sidebar.active {
+                transform: translateX(0);
+            }
+            
+            .sidebar-toggle {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .overlay {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.5);
+                z-index: 5;
+            }
+            
+            .overlay.active {
+                display: block;
+            }
+            
+            .main-content {
+                padding-top: 50px; /* Space for toggle button */
+            }
+        }
+
+        /* Small mobile devices */
+        @media (max-width: 480px) {
+            .toolbar {
+                flex-wrap: wrap;
+            }
+            
+            .toolbar input[type="text"] {
+                width: 100%;
+                order: -1;
+                margin-bottom: var(--spacing-sm);
+            }
+        }
     </style>
 </head>
 <body>
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle Sidebar">☰</button>
+    <div class="overlay" id="overlay"></div>
     <div class="container">
         <aside class="sidebar">
             <div class="search-container">
@@ -741,6 +830,7 @@
             setupAutoSave();
             setupThemeSwitcher();
             applySavedTheme();
+            setupMobileUI();
             
             let shouldCreateNew = false;
             const lastId = getLastOpenedDocumentId();
@@ -886,6 +976,7 @@
             // --- End Improved Rendering Logic ---
 
             documentsList.innerHTML = html || '<div class="no-results">No documents or folders yet.</div>';
+            updateMobileEventHandlers();
         }
 
         function escapeHtml(unsafe) {
@@ -1747,6 +1838,117 @@
             // Validate that the ID only contains alphanumeric characters, underscores, or hyphens
             return /^[\w-]+$/.test(id);
         }
+
+        function setupMobileUI() {
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.getElementById('overlay');
+            
+            function toggleSidebar() {
+                sidebar.classList.toggle('active');
+                overlay.classList.toggle('active');
+            }
+            
+            sidebarToggle.addEventListener('click', toggleSidebar);
+            overlay.addEventListener('click', toggleSidebar);
+            
+            // Close sidebar when a document is selected on mobile
+            document.querySelectorAll('.document-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    if (window.innerWidth <= 768) {
+                        toggleSidebar();
+                    }
+                });
+            });
+            
+            // Also close when clicking a folder on mobile
+            document.querySelectorAll('.folder-header').forEach(header => {
+                header.addEventListener('click', (e) => {
+                    // Don't close when toggling folder open/closed
+                    if (e.target.classList.contains('folder-toggle-icon') || 
+                        e.target.closest('.folder-toggle-icon')) {
+                        return;
+                    }
+                    
+                    if (window.innerWidth <= 768) {
+                        toggleSidebar();
+                    }
+                });
+            });
+        }
+        
+        // Update window.onload to call setupMobileUI
+        window.onload = function() {
+            initializeQuill();
+            updateSidebar();
+            setupAutoSave();
+            setupThemeSwitcher();
+            applySavedTheme();
+            setupMobileUI();
+            
+            // Check for the last opened document
+            const lastId = getLastOpenedDocumentId();
+            const docs = getDocuments();
+            
+            if (lastId && docs.find(d => d.id === lastId)) {
+                // If we have a valid last opened document id, load it
+                loadDocument(lastId);
+            } else if (docs.length > 0) {
+                // Otherwise load the most recently modified document
+                docs.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+                loadDocument(docs[0].id);
+            } else {
+                // Only create a new document if there are no documents at all
+                createNewDocument();
+                // Don't automatically save the empty document
+                currentDoc.autoSaveEnabled = false;
+            }
+        };
+        
+        // Add mobile event handler setup after the loadDocumentsList function
+        function updateMobileEventHandlers() {
+            if (window.innerWidth <= 768) {
+                // Re-attach click handlers for mobile after list is updated
+                const sidebar = document.querySelector('.sidebar');
+                const overlay = document.getElementById('overlay');
+                
+                function closeSidebar() {
+                    sidebar.classList.remove('active');
+                    overlay.classList.remove('active');
+                }
+                
+                document.querySelectorAll('.document-item').forEach(item => {
+                    item.addEventListener('click', closeSidebar);
+                });
+                
+                document.querySelectorAll('.folder-header').forEach(header => {
+                    header.addEventListener('click', (e) => {
+                        // Don't close when toggling folder open/closed
+                        if (e.target.classList.contains('folder-toggle-icon') || 
+                            e.target.closest('.folder-toggle-icon')) {
+                            return;
+                        }
+                        closeSidebar();
+                    });
+                });
+            }
+        }
+        
+        // Modify loadDocumentsList to call updateMobileEventHandlers
+        const originalLoadDocumentsList = loadDocumentsList;
+        loadDocumentsList = function() {
+            originalLoadDocumentsList();
+            updateMobileEventHandlers();
+        };
+        
+        // Call this when window resizes
+        window.addEventListener('resize', function() {
+            // Reset sidebar state when resizing to desktop
+            if (window.innerWidth > 768) {
+                document.querySelector('.sidebar').classList.remove('active');
+                document.getElementById('overlay').classList.remove('active');
+            }
+        });
     </script>
 </body>
 </html>
