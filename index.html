@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.quilljs.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.quilljs.com https://cdnjs.cloudflare.com; img-src 'self' data:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.quilljs.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.quilljs.com https://cdnjs.cloudflare.com; img-src 'self' data:; connect-src 'self' https: http://localhost:11434;">
     <title>Thoughts</title>
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
@@ -364,6 +364,70 @@
             border-radius: var(--border-radius);
             color: var(--text-secondary);
             font-size: 12px;
+        }
+
+        /* AI Assist minimal drawer */
+        .ai-button {
+            background: var(--bg-tertiary);
+        }
+        .ai-button.active {
+            background: var(--accent-primary);
+        }
+        .ai-drawer {
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: 16px;
+            width: min(920px, 96%);
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent-secondary);
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            overflow: hidden;
+            display: none;
+            z-index: 30;
+        }
+        .ai-drawer.active { display: grid; }
+        .ai-drawer-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--accent-secondary);
+        }
+        .ai-drawer-tabs { display: flex; gap: 6px; }
+        .ai-tab { padding: 6px 10px; border-radius: 8px; cursor: pointer; color: var(--text-secondary); }
+        .ai-tab.active { background: var(--accent-secondary); color: var(--text-primary); }
+        .ai-drawer-body { display: grid; grid-template-columns: 1.2fr 1fr; gap: 8px; padding: 10px; }
+        .ai-section { display: flex; flex-direction: column; gap: 8px; }
+        .ai-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .ai-controls input, .ai-controls select, .ai-controls textarea {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--accent-secondary);
+            color: var(--text-primary);
+            padding: 8px;
+            border-radius: 8px;
+            font-size: 14px;
+            width: 100%;
+        }
+        .ai-controls textarea { min-height: 70px; resize: vertical; }
+        .ai-output {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--accent-secondary);
+            border-radius: 8px;
+            padding: 10px;
+            min-height: 120px;
+            max-height: 220px;
+            overflow: auto;
+            font-size: 14px;
+        }
+        .ai-drawer-footer { display: flex; justify-content: space-between; padding: 10px; border-top: 1px solid var(--accent-secondary); }
+        .ai-inline { display: inline-flex; gap: 6px; align-items: center; }
+        .ai-danger { color: var(--danger); font-size: 11px; opacity: 0.8; }
+        @media (max-width: 768px) {
+            .ai-drawer { bottom: 8px; width: 98%; }
+            .ai-drawer-body { grid-template-columns: 1fr; }
         }
 
         /* Scrollbar */
@@ -1037,11 +1101,59 @@
                 <button class="danger" onclick="deleteDocument()" id="deleteButton" disabled title="Delete Document" aria-label="Delete Document">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                 </button>
+                <button class="ai-button" id="aiAssistBtn" title="AI Assist" aria-label="AI Assist" onclick="toggleAiDrawer()">
+                    ✨ AI
+                </button>
             </div>
 
             <div class="editor-container">
                 <div id="editor"></div>
                 <div id="slashMenu" class="slash-menu"></div>
+            </div>
+
+            <div id="aiDrawer" class="ai-drawer" aria-live="polite">
+                <div class="ai-drawer-header">
+                    <div class="ai-drawer-tabs">
+                        <div class="ai-tab active" data-mode="critique" onclick="setAiMode('critique')">Critique</div>
+                        <div class="ai-tab" data-mode="edit" onclick="setAiMode('edit')">Edit</div>
+                    </div>
+                </div>
+                <div class="ai-drawer-body">
+                    <div class="ai-section ai-controls">
+                        <div class="ai-row">
+                            <select id="aiProvider" onchange="persistAiSettings()">
+                                <option value="openai">OpenAI-compatible</option>
+                                <option value="anthropic">Anthropic</option>
+                                <option value="ollama">Ollama (local)</option>
+                            </select>
+                            <input id="aiModel" type="text" placeholder="Model (e.g., gpt-4o, claude-3-5, llama3)" oninput="persistAiSettings()" />
+                        </div>
+                        <div class="ai-row">
+                            <input id="aiBaseUrl" type="text" placeholder="Base URL (needed for OpenAI-compatible / Ollama)" oninput="persistAiSettings()" />
+                            <input id="aiApiKey" type="password" placeholder="API Key (stored locally)" oninput="persistAiSettings()" />
+                        </div>
+                        <textarea id="aiInstruction" placeholder="Optional instruction (tone, audience, constraints)"></textarea>
+                        <div class="ai-inline">
+                            <button onclick="runAiAction()" id="aiRunBtn">Run</button>
+                            <span id="aiStatus" class="ai-inline" aria-live="polite"></span>
+                        </div>
+                        <div class="ai-danger">Keys are saved only in your browser. Requests go directly from your device.</div>
+                    </div>
+                    <div class="ai-section">
+                        <div id="aiOutput" class="ai-output"></div>
+                        <div class="ai-inline">
+                            <button onclick="applyAiOutput('replace')">Replace Selection</button>
+                            <button onclick="applyAiOutput('append')">Append Below</button>
+                            <button onclick="copyAiOutput()">Copy</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="ai-drawer-footer">
+                    <span></span>
+                    <div class="ai-inline">
+                        <button onclick="toggleAiDrawer()">Close</button>
+                    </div>
+                </div>
             </div>
 
             <div class="status-bar">
@@ -2319,6 +2431,190 @@
                 ensureMobileToolbarVisibility();
             }
         });
+
+        // --- Minimal AI Assist Logic ---
+        let aiMode = 'critique';
+        function toggleAiDrawer() {
+            const drawer = document.getElementById('aiDrawer');
+            const btn = document.getElementById('aiAssistBtn');
+            const isOpen = drawer.classList.contains('active');
+            if (isOpen) {
+                drawer.classList.remove('active');
+                btn.classList.remove('active');
+            } else {
+                drawer.classList.add('active');
+                btn.classList.add('active');
+                loadAiSettings();
+            }
+        }
+
+        function setAiMode(mode) {
+            aiMode = mode;
+            document.querySelectorAll('.ai-tab').forEach(t => t.classList.remove('active'));
+            const tab = document.querySelector(`.ai-tab[data-mode="${mode}"]`);
+            if (tab) tab.classList.add('active');
+        }
+
+        function loadAiSettings() {
+            const s = JSON.parse(localStorage.getItem('aiSettings') || '{}');
+            document.getElementById('aiProvider').value = s.provider || 'openai';
+            document.getElementById('aiModel').value = s.model || '';
+            document.getElementById('aiBaseUrl').value = s.baseUrl || '';
+            document.getElementById('aiApiKey').value = s.apiKey || '';
+        }
+
+        function persistAiSettings() {
+            const s = {
+                provider: document.getElementById('aiProvider').value,
+                model: document.getElementById('aiModel').value.trim(),
+                baseUrl: document.getElementById('aiBaseUrl').value.trim(),
+                apiKey: document.getElementById('aiApiKey').value.trim()
+            };
+            localStorage.setItem('aiSettings', JSON.stringify(s));
+        }
+
+        function getSelectedTextOrAll() {
+            const sel = quill.getSelection();
+            if (sel && sel.length > 0) {
+                return quill.getText(sel.index, sel.length).trim();
+            }
+            return quill.getText().trim();
+        }
+
+        function setAiStatus(msg) {
+            const el = document.getElementById('aiStatus');
+            el.textContent = msg || '';
+        }
+
+        async function runAiAction() {
+            const input = getSelectedTextOrAll();
+            if (!input) { setAiStatus('No text to process'); return; }
+            const settings = JSON.parse(localStorage.getItem('aiSettings') || '{}');
+            const instruction = document.getElementById('aiInstruction').value.trim();
+            const outputEl = document.getElementById('aiOutput');
+            outputEl.textContent = '';
+            setAiStatus('Thinking…');
+            try {
+                const result = await callLlm({
+                    provider: settings.provider || 'openai',
+                    model: settings.model || '',
+                    baseUrl: settings.baseUrl || '',
+                    apiKey: settings.apiKey || '',
+                    mode: aiMode,
+                    text: input,
+                    instruction
+                });
+                outputEl.textContent = result || '';
+                setAiStatus('Done');
+            } catch (e) {
+                console.error(e);
+                setAiStatus('Error');
+                outputEl.textContent = (e && e.message) ? e.message : 'Failed to get response';
+            }
+        }
+
+        function applyAiOutput(how) {
+            const text = document.getElementById('aiOutput').textContent;
+            if (!text) return;
+            const sel = quill.getSelection() || { index: quill.getLength() - 1, length: 0 };
+            if (how === 'replace' && sel.length > 0) {
+                quill.deleteText(sel.index, sel.length);
+                quill.insertText(sel.index, text);
+                quill.setSelection(sel.index + text.length, 0);
+            } else if (how === 'append') {
+                const insertAt = sel.index + sel.length;
+                quill.insertText(insertAt, (sel.length > 0 ? '\n' : '\n\n') + text + '\n');
+                quill.setSelection(insertAt + text.length + 2, 0);
+            }
+            quill.focus();
+        }
+
+        function copyAiOutput() {
+            const text = document.getElementById('aiOutput').textContent;
+            if (!text) return;
+            navigator.clipboard.writeText(text).then(() => setAiStatus('Copied'));
+        }
+
+        async function callLlm(opts) {
+            const { provider } = opts;
+            if (provider === 'anthropic') return callAnthropic(opts);
+            if (provider === 'ollama') return callOllama(opts);
+            return callOpenAICompatible(opts);
+        }
+
+        function buildPrompt(mode, text, instruction) {
+            const base = mode === 'critique'
+                ? 'Provide a concise critique focusing on clarity, flow, and tone. Use short bullet points.'
+                : 'Produce a cleanly edited version that improves clarity and flow while preserving meaning.';
+            const extra = instruction ? `\nConstraints: ${instruction}` : '';
+            return `${base}${extra}\n\n---\nText:\n${text}`;
+        }
+
+        async function callOpenAICompatible({ baseUrl, apiKey, model, mode, text, instruction }) {
+            const url = (baseUrl || 'https://api.openai.com').replace(/\/$/, '') + '/v1/chat/completions';
+            const prompt = buildPrompt(mode, text, instruction);
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+                },
+                body: JSON.stringify({
+                    model: model || 'gpt-4o-mini',
+                    messages: [
+                        { role: 'system', content: 'You are a terse, high-quality writing assistant.' },
+                        { role: 'user', content: prompt }
+                    ],
+                    temperature: mode === 'critique' ? 0.2 : 0.4
+                })
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            return data.choices?.[0]?.message?.content?.trim() || '';
+        }
+
+        async function callAnthropic({ apiKey, model, mode, text, instruction }) {
+            const url = 'https://api.anthropic.com/v1/messages';
+            const prompt = buildPrompt(mode, text, instruction);
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': apiKey || '',
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify({
+                    model: model || 'claude-3-5-sonnet-latest',
+                    max_tokens: 800,
+                    messages: [
+                        { role: 'user', content: prompt }
+                    ]
+                })
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            return (data.content?.[0]?.text || '').trim();
+        }
+
+        async function callOllama({ baseUrl, model, mode, text, instruction }) {
+            const url = (baseUrl || 'http://localhost:11434').replace(/\/$/, '') + '/api/chat';
+            const prompt = buildPrompt(mode, text, instruction);
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: model || 'llama3',
+                    stream: false,
+                    messages: [
+                        { role: 'system', content: 'You are a terse, high-quality writing assistant.' },
+                        { role: 'user', content: prompt }
+                    ]
+                })
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            return data.message?.content?.trim() || '';
+        }
     </script>
 </body>
 </html>
