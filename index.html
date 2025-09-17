@@ -8,6 +8,7 @@
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/diff/5.1.0/diff.min.js"></script>
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
     <style>
         :root {
@@ -1134,9 +1135,9 @@
                             </select>
                             <select id="aiModel" onchange="persistAiSettings()"></select>
                         </div>
-                        <div class="ai-row" id="baseUrlRow" style="display:none;">
-                            <input id="aiBaseUrl" type="text" placeholder="Base URL (Ollama/custom only)" oninput="persistAiSettings()" />
+                        <div class="ai-row">
                             <input id="aiApiKey" type="password" placeholder="API Key (stored locally)" oninput="persistAiSettings()" />
+                            <span></span>
                         </div>
                         <textarea id="aiInstruction" placeholder="Optional instruction (tone, audience, constraints)"></textarea>
                         <div class="ai-inline">
@@ -2452,11 +2453,19 @@
         function setAiMode(mode) { aiMode = mode; }
 
         const PROVIDER_MODELS = {
-            openai: ['gpt-4o-mini','gpt-4o','gpt-4.1-mini','gpt-4.1'],
-            anthropic: ['claude-3-5-sonnet-latest','claude-3-opus-latest','claude-3-haiku-latest'],
-            ollama: ['llama3','mistral','qwen2:7b','phi3:mini'],
-            gemini: ['gemini-1.5-flash','gemini-1.5-pro'],
-            grok: ['grok-2-mini','grok-2']
+            openai: [
+                'gpt-4o-mini','gpt-4o','gpt-4.1-mini','gpt-4.1','gpt-4o-realtime-preview','o4-mini','o4'
+            ],
+            anthropic: [
+                'claude-3-5-sonnet-latest','claude-3-5-haiku-latest','claude-3-opus-latest','claude-3-haiku-latest'
+            ],
+            ollama: ['llama3','llama3.1','mistral','qwen2:7b','phi3:mini'],
+            gemini: [
+                'gemini-1.5-flash','gemini-1.5-pro','gemini-1.5-pro-002','gemini-1.5-flash-002'
+            ],
+            grok: [
+                'grok-2-mini','grok-2','grok-2-latest'
+            ]
         };
 
         function populateModelSelect(provider, selected) {
@@ -2474,18 +2483,7 @@
             const provider = document.getElementById('aiProvider').value;
             const s = JSON.parse(localStorage.getItem('aiSettings') || '{}');
             populateModelSelect(provider, s.model);
-            const baseRow = document.getElementById('baseUrlRow');
-            baseRow.style.display = (provider === 'ollama' || provider === 'openai') ? 'grid' : 'grid';
-            // Only show base URL input when provider is ollama; OpenAI-compatible may need it, but user asked to hide if not necessary.
-            const baseInput = document.getElementById('aiBaseUrl');
-            if (provider === 'ollama') {
-                baseRow.style.display = 'grid';
-                baseInput.placeholder = 'Base URL (e.g., http://localhost:11434)';
-            } else {
-                baseRow.style.display = 'grid';
-                // Keep API key visible; hide base URL field visually via empty value and no-op placeholder
-                baseInput.placeholder = 'Base URL (optional)';
-            }
+            // Base URL removed per request; nothing to toggle.
             persistAiSettings();
         }
 
@@ -2494,7 +2492,6 @@
             const provider = s.provider || 'openai';
             document.getElementById('aiProvider').value = provider;
             populateModelSelect(provider, s.model);
-            document.getElementById('aiBaseUrl').value = s.baseUrl || '';
             document.getElementById('aiApiKey').value = s.apiKey || '';
             onProviderChange();
         }
@@ -2503,7 +2500,6 @@
             const s = {
                 provider: document.getElementById('aiProvider').value,
                 model: document.getElementById('aiModel').value.trim(),
-                baseUrl: document.getElementById('aiBaseUrl').value.trim(),
                 apiKey: document.getElementById('aiApiKey').value.trim()
             };
             localStorage.setItem('aiSettings', JSON.stringify(s));
@@ -2534,20 +2530,150 @@
                 const edited = await callLlm({
                     provider: settings.provider || 'openai',
                     model: settings.model || '',
-                    baseUrl: settings.baseUrl || '',
                     apiKey: settings.apiKey || '',
                     mode: aiMode,
                     text: input,
                     instruction
                 });
-                const diffs = computeDiffBlocks(input, edited || '');
-                renderDiffBlocks(diffs, outputEl);
+                const diffs = computeAccurateDiff(input, edited || '');
+                const entry = { id: 'rev_' + Date.now(), ts: Date.now(), before: input, after: edited, diffs };
+                pushHistoryEntry(entry);
+                renderAccurateDiff(entry, outputEl);
                 setAiStatus('Done');
             } catch (e) {
                 console.error(e);
                 setAiStatus('Error');
                 outputEl.textContent = (e && e.message) ? e.message : 'Failed to get response';
             }
+        }
+
+        function getHistoryKey() {
+            const id = currentDoc.id || 'unsaved';
+            return `aiHistory:${id}`;
+        }
+
+        function pushHistoryEntry(entry) {
+            const key = getHistoryKey();
+            const list = JSON.parse(localStorage.getItem(key) || '[]');
+            list.unshift(entry);
+            localStorage.setItem(key, JSON.stringify(list.slice(0, 50)));
+        }
+
+        function getHistoryEntries() {
+            const key = getHistoryKey();
+            return JSON.parse(localStorage.getItem(key) || '[]');
+        }
+
+        function computeAccurateDiff(a, b) {
+            // Using jsdiff to compute patch-like structured diff
+            const parts = Diff.diffLines(a, b);
+            // Also store a unified patch for possible apply/revert in the future
+            const unified = Diff.createTwoFilesPatch('before','after',a,b);
+            return { parts, unified };
+        }
+
+        function renderAccurateDiff(entry, container) {
+            container.innerHTML = '';
+            const header = document.createElement('div');
+            header.className = 'diff-header';
+            const date = new Date(entry.ts).toLocaleString();
+            header.innerHTML = `<span>Suggested edit • ${date}</span>`;
+            const actions = document.createElement('div');
+            actions.className = 'diff-actions';
+            const applyAll = document.createElement('button');
+            applyAll.textContent = 'Accept All';
+            applyAll.onclick = () => { quill.setText(entry.after); };
+            const revertAll = document.createElement('button');
+            revertAll.textContent = 'Revert All';
+            revertAll.onclick = () => { quill.setText(entry.before); };
+            actions.appendChild(applyAll);
+            actions.appendChild(revertAll);
+            header.appendChild(actions);
+            container.appendChild(header);
+
+            // Build per-hunk rendering with links
+            let origLine = 0, newLine = 0;
+            entry.diffs.parts.forEach((part, idx) => {
+                if (!part.added && !part.removed) {
+                    const count = part.count || part.value.split('\n').length - 1;
+                    origLine += count;
+                    newLine += count;
+                    return;
+                }
+                const block = document.createElement('div');
+                block.className = 'diff-block';
+                const blockHeader = document.createElement('div');
+                blockHeader.className = 'diff-header';
+                const label = part.added ? `+ new @ ${newLine + 1}` : `- old @ ${origLine + 1}`;
+                const jump = document.createElement('span');
+                jump.className = 'diff-jump';
+                jump.textContent = 'Jump';
+                const targetLine = part.added ? newLine : origLine;
+                jump.onclick = () => jumpToLine(targetLine);
+                const buttons = document.createElement('div');
+                buttons.className = 'diff-actions';
+                const accept = document.createElement('button');
+                accept.textContent = 'Accept';
+                accept.onclick = () => applyHunk(entry, idx, 'accept');
+                const decline = document.createElement('button');
+                decline.textContent = 'Decline';
+                decline.onclick = () => applyHunk(entry, idx, 'decline');
+                blockHeader.appendChild(document.createTextNode(label));
+                blockHeader.appendChild(jump);
+                buttons.appendChild(accept);
+                buttons.appendChild(decline);
+                blockHeader.appendChild(buttons);
+                const body = document.createElement('div');
+                body.className = 'diff-body';
+                body.textContent = part.value;
+                if (part.added) body.classList.add('diff-add');
+                if (part.removed) body.classList.add('diff-del');
+                block.appendChild(blockHeader);
+                block.appendChild(body);
+                container.appendChild(block);
+
+                const count = part.count || part.value.split('\n').length - 1;
+                if (part.added) newLine += count; else if (part.removed) origLine += count;
+            });
+
+            // Render simple history list under current output
+            const history = getHistoryEntries();
+            if (history.length > 1) {
+                const histWrap = document.createElement('div');
+                histWrap.style.marginTop = '8px';
+                const title = document.createElement('div');
+                title.textContent = 'History';
+                histWrap.appendChild(title);
+                history.slice(1, 6).forEach(h => {
+                    const row = document.createElement('div');
+                    row.className = 'diff-header';
+                    const d = new Date(h.ts).toLocaleString();
+                    const open = document.createElement('button');
+                    open.textContent = 'Open';
+                    open.onclick = () => renderAccurateDiff(h, container);
+                    row.appendChild(document.createTextNode(d));
+                    row.appendChild(open);
+                    histWrap.appendChild(row);
+                });
+                container.appendChild(histWrap);
+            }
+        }
+
+        function applyHunk(entry, partIndex, action) {
+            // Rebuild text by walking diff parts and applying accept/decline
+            // Accept added: include added; Decline added: skip
+            // Accept removed: skip removed; Decline removed: include removed
+            const parts = entry.diffs.parts.slice();
+            const newParts = parts.map((p, i) => {
+                if (i !== partIndex) return p;
+                if (p.added) return action === 'accept' ? p : { value: '', added: false, removed: false };
+                if (p.removed) return action === 'accept' ? { value: '', added: false, removed: false } : p;
+                return p;
+            });
+            // Compose new text from modified parts
+            let result = '';
+            newParts.forEach(p => { if (!p.removed) result += p.value; });
+            quill.setText(result);
         }
 
         function computeDiffBlocks(original, edited) {
