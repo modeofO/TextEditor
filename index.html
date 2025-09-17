@@ -396,9 +396,7 @@
             background: var(--bg-tertiary);
             border-bottom: 1px solid var(--accent-secondary);
         }
-        .ai-drawer-tabs { display: flex; gap: 6px; }
-        .ai-tab { padding: 6px 10px; border-radius: 8px; cursor: pointer; color: var(--text-secondary); }
-        .ai-tab.active { background: var(--accent-secondary); color: var(--text-primary); }
+        .ai-drawer-title { font-weight: 600; color: var(--text-primary); }
         .ai-drawer-body { display: grid; grid-template-columns: 1.2fr 1fr; gap: 8px; padding: 10px; }
         .ai-section { display: flex; flex-direction: column; gap: 8px; }
         .ai-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -425,6 +423,15 @@
         .ai-drawer-footer { display: flex; justify-content: space-between; padding: 10px; border-top: 1px solid var(--accent-secondary); }
         .ai-inline { display: inline-flex; gap: 6px; align-items: center; }
         .ai-danger { color: var(--danger); font-size: 11px; opacity: 0.8; }
+        .diff-block { border-left: 3px solid var(--accent-secondary); padding: 8px; margin-bottom: 8px; border-radius: 6px; background: rgba(255,255,255,0.02); }
+        .diff-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .diff-jump { color: var(--text-secondary); font-size: 12px; cursor: pointer; text-decoration: underline; }
+        .diff-body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; white-space: pre-wrap; word-break: break-word; }
+        .diff-del { color: #ff6b6b; }
+        .diff-add { color: #25d366; }
+        .diff-actions { display: inline-flex; gap: 6px; }
+        .diff-actions button { font-size: 12px; padding: 4px 8px; }
+        .diff-edit-area { width: 100%; min-height: 60px; margin-top: 6px; }
         @media (max-width: 768px) {
             .ai-drawer { bottom: 8px; width: 98%; }
             .ai-drawer-body { grid-template-columns: 1fr; }
@@ -1101,8 +1108,8 @@
                 <button class="danger" onclick="deleteDocument()" id="deleteButton" disabled title="Delete Document" aria-label="Delete Document">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                 </button>
-                <button class="ai-button" id="aiAssistBtn" title="AI Assist" aria-label="AI Assist" onclick="toggleAiDrawer()">
-                    ✨ AI
+                <button class="ai-button" id="aiAssistBtn" title="Edit" aria-label="Edit" onclick="toggleAiDrawer()">
+                    Edit
                 </button>
             </div>
 
@@ -1113,23 +1120,22 @@
 
             <div id="aiDrawer" class="ai-drawer" aria-live="polite">
                 <div class="ai-drawer-header">
-                    <div class="ai-drawer-tabs">
-                        <div class="ai-tab active" data-mode="critique" onclick="setAiMode('critique')">Critique</div>
-                        <div class="ai-tab" data-mode="edit" onclick="setAiMode('edit')">Edit</div>
-                    </div>
+                    <div class="ai-drawer-title">Edit</div>
                 </div>
                 <div class="ai-drawer-body">
                     <div class="ai-section ai-controls">
                         <div class="ai-row">
-                            <select id="aiProvider" onchange="persistAiSettings()">
+                            <select id="aiProvider" onchange="onProviderChange()">
                                 <option value="openai">OpenAI-compatible</option>
                                 <option value="anthropic">Anthropic</option>
                                 <option value="ollama">Ollama (local)</option>
+                                <option value="gemini">Gemini</option>
+                                <option value="grok">Grok</option>
                             </select>
-                            <input id="aiModel" type="text" placeholder="Model (e.g., gpt-4o, claude-3-5, llama3)" oninput="persistAiSettings()" />
+                            <select id="aiModel" onchange="persistAiSettings()"></select>
                         </div>
-                        <div class="ai-row">
-                            <input id="aiBaseUrl" type="text" placeholder="Base URL (needed for OpenAI-compatible / Ollama)" oninput="persistAiSettings()" />
+                        <div class="ai-row" id="baseUrlRow" style="display:none;">
+                            <input id="aiBaseUrl" type="text" placeholder="Base URL (Ollama/custom only)" oninput="persistAiSettings()" />
                             <input id="aiApiKey" type="password" placeholder="API Key (stored locally)" oninput="persistAiSettings()" />
                         </div>
                         <textarea id="aiInstruction" placeholder="Optional instruction (tone, audience, constraints)"></textarea>
@@ -1141,11 +1147,6 @@
                     </div>
                     <div class="ai-section">
                         <div id="aiOutput" class="ai-output"></div>
-                        <div class="ai-inline">
-                            <button onclick="applyAiOutput('replace')">Replace Selection</button>
-                            <button onclick="applyAiOutput('append')">Append Below</button>
-                            <button onclick="copyAiOutput()">Copy</button>
-                        </div>
                     </div>
                 </div>
                 <div class="ai-drawer-footer">
@@ -2433,7 +2434,7 @@
         });
 
         // --- Minimal AI Assist Logic ---
-        let aiMode = 'critique';
+        let aiMode = 'edit';
         function toggleAiDrawer() {
             const drawer = document.getElementById('aiDrawer');
             const btn = document.getElementById('aiAssistBtn');
@@ -2448,19 +2449,54 @@
             }
         }
 
-        function setAiMode(mode) {
-            aiMode = mode;
-            document.querySelectorAll('.ai-tab').forEach(t => t.classList.remove('active'));
-            const tab = document.querySelector(`.ai-tab[data-mode="${mode}"]`);
-            if (tab) tab.classList.add('active');
+        function setAiMode(mode) { aiMode = mode; }
+
+        const PROVIDER_MODELS = {
+            openai: ['gpt-4o-mini','gpt-4o','gpt-4.1-mini','gpt-4.1'],
+            anthropic: ['claude-3-5-sonnet-latest','claude-3-opus-latest','claude-3-haiku-latest'],
+            ollama: ['llama3','mistral','qwen2:7b','phi3:mini'],
+            gemini: ['gemini-1.5-flash','gemini-1.5-pro'],
+            grok: ['grok-2-mini','grok-2']
+        };
+
+        function populateModelSelect(provider, selected) {
+            const select = document.getElementById('aiModel');
+            select.innerHTML = '';
+            const models = PROVIDER_MODELS[provider] || [];
+            models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m; opt.textContent = m; select.appendChild(opt);
+            });
+            if (selected && models.includes(selected)) select.value = selected;
+        }
+
+        function onProviderChange() {
+            const provider = document.getElementById('aiProvider').value;
+            const s = JSON.parse(localStorage.getItem('aiSettings') || '{}');
+            populateModelSelect(provider, s.model);
+            const baseRow = document.getElementById('baseUrlRow');
+            baseRow.style.display = (provider === 'ollama' || provider === 'openai') ? 'grid' : 'grid';
+            // Only show base URL input when provider is ollama; OpenAI-compatible may need it, but user asked to hide if not necessary.
+            const baseInput = document.getElementById('aiBaseUrl');
+            if (provider === 'ollama') {
+                baseRow.style.display = 'grid';
+                baseInput.placeholder = 'Base URL (e.g., http://localhost:11434)';
+            } else {
+                baseRow.style.display = 'grid';
+                // Keep API key visible; hide base URL field visually via empty value and no-op placeholder
+                baseInput.placeholder = 'Base URL (optional)';
+            }
+            persistAiSettings();
         }
 
         function loadAiSettings() {
             const s = JSON.parse(localStorage.getItem('aiSettings') || '{}');
-            document.getElementById('aiProvider').value = s.provider || 'openai';
-            document.getElementById('aiModel').value = s.model || '';
+            const provider = s.provider || 'openai';
+            document.getElementById('aiProvider').value = provider;
+            populateModelSelect(provider, s.model);
             document.getElementById('aiBaseUrl').value = s.baseUrl || '';
             document.getElementById('aiApiKey').value = s.apiKey || '';
+            onProviderChange();
         }
 
         function persistAiSettings() {
@@ -2492,10 +2528,10 @@
             const settings = JSON.parse(localStorage.getItem('aiSettings') || '{}');
             const instruction = document.getElementById('aiInstruction').value.trim();
             const outputEl = document.getElementById('aiOutput');
-            outputEl.textContent = '';
+            outputEl.innerHTML = '';
             setAiStatus('Thinking…');
             try {
-                const result = await callLlm({
+                const edited = await callLlm({
                     provider: settings.provider || 'openai',
                     model: settings.model || '',
                     baseUrl: settings.baseUrl || '',
@@ -2504,13 +2540,152 @@
                     text: input,
                     instruction
                 });
-                outputEl.textContent = result || '';
+                const diffs = computeDiffBlocks(input, edited || '');
+                renderDiffBlocks(diffs, outputEl);
                 setAiStatus('Done');
             } catch (e) {
                 console.error(e);
                 setAiStatus('Error');
                 outputEl.textContent = (e && e.message) ? e.message : 'Failed to get response';
             }
+        }
+
+        function computeDiffBlocks(original, edited) {
+            // Simple line-based diff fallback with word-level highlighting in changed lines
+            const origLines = original.split(/\n/);
+            const editLines = edited.split(/\n/);
+            const max = Math.max(origLines.length, editLines.length);
+            const blocks = [];
+            for (let i = 0; i < max; i++) {
+                const a = origLines[i] || '';
+                const b = editLines[i] || '';
+                if (a === b) continue;
+                const wordDiff = diffWords(a, b);
+                blocks.push({
+                    id: 'chg_' + i,
+                    line: i,
+                    original: a,
+                    edited: b,
+                    wordDiff
+                });
+            }
+            return blocks;
+        }
+
+        function diffWords(a, b) {
+            const aWords = a.split(/(\s+|\b)/);
+            const bWords = b.split(/(\s+|\b)/);
+            const dp = Array(aWords.length + 1).fill(null).map(() => Array(bWords.length + 1).fill(0));
+            for (let i = aWords.length - 1; i >= 0; i--) {
+                for (let j = bWords.length - 1; j >= 0; j--) {
+                    dp[i][j] = aWords[i] === bWords[j] ? 1 + dp[i+1][j+1] : Math.max(dp[i+1][j], dp[i][j+1]);
+                }
+            }
+            const ops = [];
+            let i = 0, j = 0;
+            while (i < aWords.length && j < bWords.length) {
+                if (aWords[i] === bWords[j]) { ops.push({ type: 'eq', text: aWords[i++] }); j++; }
+                else if (dp[i+1][j] >= dp[i][j+1]) { ops.push({ type: 'del', text: aWords[i++] }); }
+                else { ops.push({ type: 'add', text: bWords[j++] }); }
+            }
+            while (i < aWords.length) ops.push({ type: 'del', text: aWords[i++] });
+            while (j < bWords.length) ops.push({ type: 'add', text: bWords[j++] });
+            return ops;
+        }
+
+        function renderDiffBlocks(blocks, container) {
+            if (blocks.length === 0) {
+                container.textContent = 'No changes suggested.';
+                return;
+            }
+            blocks.forEach(block => {
+                const wrap = document.createElement('div');
+                wrap.className = 'diff-block';
+                wrap.dataset.changeId = block.id;
+
+                const header = document.createElement('div');
+                header.className = 'diff-header';
+                header.innerHTML = `<span>Line ${block.line + 1}</span>`;
+                const right = document.createElement('div');
+                right.className = 'diff-actions';
+
+                const jump = document.createElement('span');
+                jump.className = 'diff-jump';
+                jump.textContent = 'Jump';
+                jump.onclick = () => jumpToLine(block.line);
+                header.appendChild(jump);
+
+                const acceptBtn = document.createElement('button');
+                acceptBtn.textContent = 'Accept';
+                acceptBtn.onclick = () => applySingleChange(block, 'accept');
+                const declineBtn = document.createElement('button');
+                declineBtn.textContent = 'Decline';
+                declineBtn.onclick = () => applySingleChange(block, 'decline');
+                const editBtn = document.createElement('button');
+                editBtn.textContent = 'Edit';
+                editBtn.onclick = () => inlineEditChange(wrap, block);
+                right.appendChild(acceptBtn);
+                right.appendChild(declineBtn);
+                right.appendChild(editBtn);
+                header.appendChild(right);
+
+                const body = document.createElement('div');
+                body.className = 'diff-body';
+                body.innerHTML = renderWordDiff(block.wordDiff);
+
+                wrap.appendChild(header);
+                wrap.appendChild(body);
+                container.appendChild(wrap);
+            });
+        }
+
+        function renderWordDiff(ops) {
+            return ops.map(op => {
+                if (op.type === 'eq') return escapeHtml(op.text);
+                if (op.type === 'del') return `<span class="diff-del">-${escapeHtml(op.text)}</span>`;
+                if (op.type === 'add') return `<span class="diff-add">+${escapeHtml(op.text)}</span>`;
+                return '';
+            }).join('');
+        }
+
+        function jumpToLine(lineIdx) {
+            // Navigate cursor to start of given line in Quill
+            const text = quill.getText();
+            let idx = 0, line = 0;
+            for (let i = 0; i < text.length && line < lineIdx; i++) {
+                if (text[i] === '\n') line++;
+                idx++;
+            }
+            quill.setSelection(idx, 0);
+            quill.focus();
+        }
+
+        function applySingleChange(block, action) {
+            const text = quill.getText();
+            const lines = text.split(/\n/);
+            if (block.line >= lines.length) return;
+            if (action === 'accept') {
+                lines[block.line] = block.edited;
+            } else if (action === 'decline') {
+                lines[block.line] = block.original;
+            }
+            const newText = lines.join('\n');
+            quill.setText(newText);
+        }
+
+        function inlineEditChange(container, block) {
+            const area = document.createElement('textarea');
+            area.className = 'diff-edit-area';
+            area.value = block.edited;
+            const save = document.createElement('button');
+            save.textContent = 'Save';
+            save.onclick = () => {
+                block.edited = area.value;
+                applySingleChange(block, 'accept');
+                container.querySelector('.diff-body').innerHTML = renderWordDiff(diffWords(block.original, block.edited));
+            };
+            container.appendChild(area);
+            container.appendChild(save);
         }
 
         function applyAiOutput(how) {
@@ -2539,13 +2714,13 @@
             const { provider } = opts;
             if (provider === 'anthropic') return callAnthropic(opts);
             if (provider === 'ollama') return callOllama(opts);
+            if (provider === 'gemini') return callGemini(opts);
+            if (provider === 'grok') return callGrok(opts);
             return callOpenAICompatible(opts);
         }
 
         function buildPrompt(mode, text, instruction) {
-            const base = mode === 'critique'
-                ? 'Provide a concise critique focusing on clarity, flow, and tone. Use short bullet points.'
-                : 'Produce a cleanly edited version that improves clarity and flow while preserving meaning.';
+            const base = 'Produce a cleanly edited version that improves clarity and flow while preserving meaning. Return ONLY the new text; do not include commentary.';
             const extra = instruction ? `\nConstraints: ${instruction}` : '';
             return `${base}${extra}\n\n---\nText:\n${text}`;
         }
@@ -2565,7 +2740,7 @@
                         { role: 'system', content: 'You are a terse, high-quality writing assistant.' },
                         { role: 'user', content: prompt }
                     ],
-                    temperature: mode === 'critique' ? 0.2 : 0.4
+                    temperature: 0.4
                 })
             });
             if (!res.ok) throw new Error(await res.text());
@@ -2614,6 +2789,42 @@
             if (!res.ok) throw new Error(await res.text());
             const data = await res.json();
             return data.message?.content?.trim() || '';
+        }
+
+        async function callGemini({ apiKey, model, mode, text, instruction }) {
+            const m = model || 'gemini-1.5-flash';
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(apiKey || '')}`;
+            const prompt = buildPrompt(mode, text, instruction);
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }]}] })
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+        }
+
+        async function callGrok({ apiKey, model, mode, text, instruction }) {
+            const url = 'https://api.x.ai/v1/chat/completions';
+            const prompt = buildPrompt(mode, text, instruction);
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+                },
+                body: JSON.stringify({
+                    model: model || 'grok-2-mini',
+                    messages: [
+                        { role: 'system', content: 'You are a terse, high-quality writing assistant.' },
+                        { role: 'user', content: prompt }
+                    ]
+                })
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            return data.choices?.[0]?.message?.content?.trim() || '';
         }
     </script>
 </body>
